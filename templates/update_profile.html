@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %} Update Profile {% endblock %}
+{% block content %}
+<h2>Update Profile Page</h2>
+<div>
+    <form method="POST" action="">
+        <p>Update You account details:</p>
+        <table>
+        <tr>
+            <td>Username:</td>
+            <td>{{ form.username(placeholder="Username")}}</td>
+        </tr>
+        <tr>
+            <td>Email:</td>
+            <td>{{ form.email(placeholder="Email")}}</td>
+        </tr>
+        </table>
+        <input type="submit" value="Submit">
+    </form>
+
+</div>
+{% endblock %}

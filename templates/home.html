@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h2>Home Page</h2>
+
+{% with messages = get_flashed_messages() %}
+    {% if messages %}
+        {% for message in messages %}
+            <div  class="alert alert-warning alert-dismissable " role="alert">
+                <span>{{message}}</span>
+            <button type="button" class="close" data-bs-dismiss="alert" aria-label ="close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<p>Welcome back, {{ username }}!</p>
+
+{% endblock %}

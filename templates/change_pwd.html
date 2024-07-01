@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %} Change Password {% endblock %}
+{% block content %}
+<h2>Change Password</h2>
+<p>Strong password required.Enter 8-256 characters.Do not include common words or names.
+Combine uppercase letter,lowercase letters,numbers and symbols.</p>
+<div>
+    <form method="POST" action="">
+        <table>
+            <tr>
+                <td>New Password:</td>
+                <td>{{ form.newpwd }}</td>
+            </tr>
+            <tr>
+                <td>Confirm Password:</td>
+                <td>{{ form.confirmpwd }}</td>
+            </tr>
+        </table>
+
+        <div class="msg">{{ msg }}</div>
+        <input type="submit" value="Confirm" >
+
+    </form>
+</div>
+{% endblock %}
