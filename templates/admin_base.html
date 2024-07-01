@@ -15,6 +15,7 @@
 				<a href=""><i class="fa fa-database"></i>Order</a>
 				{% if session.loggedin and session['role'] == "super_admin" %}
 					<a href="{{ url_for('admin_register') }}"><i class="fas fa-user-plus"></i>Create Admin Accounts</a>
+					<a href="{{ url_for('retrieve_users') }}"><i class="fas fa-database"></i>Users</a>
 				{% endif %}
 				<a href="{{ url_for('admin_profile') }}"><i class="fas fa-user-circle"></i>Profile</a>
 				<a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i>Logout</a>

@@ -64,7 +64,9 @@ def admin_required(func):
         if 'loggedin' in session and session.get('role') in ['admin', 'super_admin']:
             return func(*args, **kwargs)
         else:
-            return 'Unauthorised Access! Only admins can access this page'
+            flash('Unauthorised Access! Only admins can access this page')
+            return redirect(url_for('login'))
+
     return wrapper
 
 
@@ -116,6 +118,7 @@ def login():
                 session['loggedin'] = True
                 session['id'] = account['id']
                 session['username'] = account['username']
+                session['role']=account['role']
                 print(session['id'])
 
                 if account['role']=='admin' or account['role']=='super_admin':
@@ -141,7 +144,7 @@ def logout():
 
     return redirect(url_for('login'))
 
-@app.route('/MyWebApp/register', methods=['GET', 'POST'])
+@app.route('/webapp/register', methods=['GET', 'POST'])
 def register():
     msg = ''
     register_form=RegisterForm(request.form)
@@ -158,9 +161,9 @@ def register():
         msg = 'You have successfully registered!'
 
     return render_template('register.html', msg=msg,form=register_form)
-@app.route('/admin_register', methods=['GET', 'POST'])
-@login_required
+@app.route('/webapp/admin/register', methods=['GET', 'POST'])
 @admin_required
+@login_required
 def admin_register():
     if 'loggedin' in session:
         if not super_admin() == True:
@@ -187,7 +190,7 @@ def admin_register():
                 #     msg = 'Password has been taken. Please choose a different password'
                 # elif account['email'] == email:
                 #     msg = 'Email has been taken. Please choose a different email'
-                return render_template('adminRegister.html', msg=msg)
+                return render_template('admin_register.html', msg=msg)
             else:
                 # Account doesnt exists and the form data is valid, now insert new account into accounts table
                 hashpwd = bcrypt.generate_password_hash(password)
@@ -197,26 +200,29 @@ def admin_register():
                 cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, email))
                 mysql.connection.commit()
                 msg = 'You have successfully registered!'
+                return render_template('admin_home.html', msg=msg)
         elif request.method == 'POST': #verify if theres an input
             # Form is empty... (no POST data)
             msg = 'Please fill out the form!'
             # Show registration form with message (if any)
-        return render_template('adminRegister.html', msg=msg)
+        return render_template('admin_register.html', msg=msg)
     return redirect(url_for('login'))
-@app.route('/MyWebApp/home')
+@app.route('/webapp/home')
 @login_required
 def home():
     if 'loggedin' in session:
         return render_template('home.html', username=session['username'])
     return redirect(url_for('login'))
-@app.route('/MyWebApp/admin/home')
+@app.route('/webapp/admin/home')
+@admin_required
+@login_required
 def admin_home():
     if 'loggedin' in session:
         return render_template('admin_home.html', username=session['username'])
     return redirect(url_for('login'))
 
 
-@app.route('/MyWebApp/profile',methods=['GET','POST'])
+@app.route('/webapp/profile',methods=['GET','POST'])
 @login_required
 def profile():
     if 'loggedin' in session:
@@ -226,7 +232,9 @@ def profile():
 
         return render_template('profile.html', account=account)
     return redirect(url_for('login'))
-@app.route('/MyWebApp/admin/profile',methods=['GET','POST'])
+@app.route('/webapp/admin/profile',methods=['GET','POST'])
+@admin_required
+@login_required
 def admin_profile():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -236,7 +244,7 @@ def admin_profile():
         return render_template('admin_profile.html', account=account)
     return redirect(url_for('login'))
 
-@app.route('/MyWebApp/profile/update',methods=['GET','POST'])
+@app.route('/webapp/profile/update',methods=['GET','POST'])
 @login_required
 def update_profile():
     if 'loggedin' in session:
@@ -263,7 +271,7 @@ def update_profile():
             return render_template('update_profile.html',msg=msg,form=update_profile_form,account=account)
     return redirect(url_for('login'))
 
-@app.route('/MyWebApp/Profile/ChangePassowrd',methods=['GET','POST'])
+@app.route('/webapp/profile/change_passowrd',methods=['GET','POST'])
 @login_required
 def change_password():
     if 'loggedin' in session:
@@ -285,8 +293,26 @@ def change_password():
                 msg='Password didnt match.Pls try again'
         return render_template('change_pwd.html',form=pwd_form,msg=msg)
     return redirect(url_for('login'))
+
+@app.route('/webapp/admin/retrieve_users')
+@admin_required
+@login_required
+def retrieve_users():
+    if 'loggedin' in session:
+        # We need all the account info for the user so we can display it on the profile page
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT COUNT(*) AS users_count FROM accounts')
+        count = cursor.fetchone()
+        users_count = count['users_count']
+        cursor.execute('SELECT * FROM accounts')
+        users_info = cursor.fetchall()
+
+        # Show the profile page with account info
+        return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)
+        # User is not loggedin redirect to login page
+    return redirect(url_for('login'))
 #ellexys,email verification
-@app.route('/ForgotPassword',methods=['GET','POST'])
+@app.route('/forgot_password',methods=['GET','POST'])
 @login_required
 def forgot_password():
     pass
