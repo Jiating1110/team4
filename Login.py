@@ -1,10 +1,11 @@
 import os
-# import pathlib
-# from google.oauth2 import id_token
-# from google_auth_oauthlib.flow import Flow
-# from pip._vendor import cachecontrol
-# import google.auth.transport.requests
-# import requests
+import pathlib
+from google.oauth2 import id_token
+from google_auth_oauthlib.flow import Flow
+from pip._vendor import cachecontrol
+import google.auth.transport.requests
+import requests
+import secrets
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
@@ -34,14 +35,14 @@ app.config['MYSQL_PORT'] = 3306
 # Intialize MySQL
 mysql = MySQL(app)
 
-# os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-# google_client_id="494648185587-331iamoak392u2o7bl1h2ornokj4qmse.apps.googleusercontent.com"
-# client_secrets_file=os.path.join(pathlib.Path(__file__).parent,"client_secret.json")
-# flow = Flow.from_client_secrets_file(
-#     client_secrets_file=client_secrets_file,
-#     scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email", "openid"],
-#     redirect_uri="http://127.0.0.1:5000/callback"
-# )
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+google_client_id="494648185587-331iamoak392u2o7bl1h2ornokj4qmse.apps.googleusercontent.com"
+client_secrets_file=os.path.join(pathlib.Path(__file__).parent,"client_secret.json")
+flow = Flow.from_client_secrets_file(
+    client_secrets_file=client_secrets_file,
+    scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email", "openid"],
+    redirect_uri="http://127.0.0.1:5000/callback"
+)
 
 
 def login_required(f):
@@ -68,34 +69,94 @@ def admin_required(func):
             return redirect(url_for('login'))
     return wrapper
 
+def generate_random_password(length=12):
+    """Generate a random password with the specified length."""
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_+="
+    password = ''.join(secrets.choice(alphabet) for _ in range(length))
+    return password
 
-# @app.route("/google_login")
+@app.route("/google")
+def google_login():
+    authorization_url, state = flow.authorization_url()
+    session["state"] = state
+    return redirect(authorization_url)
+
+@app.route("/callback")
+def callback():
+    flow.fetch_token(authorization_response=request.url)
+
+    if not session["state"] == request.args["state"]:
+        abort(500)  # State does not match!
+
+    credentials = flow.credentials
+    request_session = requests.session()
+    cached_session = cachecontrol.CacheControl(request_session)
+    token_request = google.auth.transport.requests.Request(session=cached_session)
+
+    id_info = id_token.verify_oauth2_token(
+        id_token=credentials._id_token,
+        request=token_request,
+        audience=google_client_id
+    )
+
+    session["google_id"] = id_info.get("sub")
+    session["name"] = id_info.get("name")
+    session['email']=id_info.get("email")
+    print('google try',session["google_id"],session["name"],session['email'])
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    # cursor.execute('SELECT google_id FROM accounts ')
+    cursor.execute('SELECT * FROM accounts WHERE google_id = %s', (session['google_id'],))
+    account = cursor.fetchone()
+
+    if account is None:
+        # no account in database
+        role='customer'
+        username=session['name']
+        pwd_type='random'
+        password=generate_random_password()
+        hashpwd=bcrypt.generate_password_hash(password)
+        email = session['email']
+        google_id=session['google_id']
+
+        key = Fernet.generate_key()
+        # Write Symmetric key to file – wb:write and close file
+        key_file_name = f"{username}_symmetric.key"
+        with open(key_file_name, "wb") as fo:
+            fo.write(key)
+        # Initialize Fernet Class
+        f = Fernet(key)
+
+        # convert email address to bytes before saving to Database
+        email = email.encode()
+        # Encrypt email address
+        encrypted_email = f.encrypt(email)
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type,hashpwd,encrypted_email,google_id,))
+        mysql.connection.commit()
+        print('google create acc,successfully')
+
+        session['loggedin'] = True
+        session['id'] = cursor.lastrowid
+        session['username'] = session['name']
+        # return render_template('home.html')
+    else:
+        #if database have account
+
+        session['loggedin']=True
+        session['id']=account['id']
+        session['username']=account['username']
+    return redirect(url_for('home'))
+
+
+
+# @app.route('/google_login')
 # def google_login():
-#     authorization_url, state = flow.authorization_url()
-#     session["state"] = state
-#     return redirect(authorization_url)
-#
-# @app.route("/callback")
-# def callback():
-#     flow.fetch_token(authorization_response=request.url)
-#
-#     if not session["state"] == request.args["state"]:
-#         abort(500)  # State does not match!
-#
-#     credentials = flow.credentials
-#     request_session = requests.session()
-#     cached_session = cachecontrol.CacheControl(request_session)
-#     token_request = google.auth.transport.requests.Request(session=cached_session)
-#
-#     id_info = id_token.verify_oauth2_token(
-#         id_token=credentials._id_token,
-#         request=token_request,
-#         audience=google_client_id
-#     )
-#
-#     session["google_id"] = id_info.get("sub")
-#     session["name"] = id_info.get("name")
-#     return redirect('/MyWebApp/home')
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT * FROM accounts WHERE google_id = %s ', (username,))
+#     account = cursor.fetchone()
+
 
 
 @app.route('/', methods=['GET', 'POST'])
