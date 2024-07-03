@@ -151,12 +151,6 @@ def callback():
 
 
 
-# @app.route('/google_login')
-# def google_login():
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT * FROM accounts WHERE google_id = %s ', (username,))
-#     account = cursor.fetchone()
-
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -229,6 +223,8 @@ def register():
         password=register_form.password.data
         email=register_form.email.data
         role='customer'
+        pwd_type='user'
+        google_id='Null'
         hashpwd = bcrypt.generate_password_hash(password)
 
         key = Fernet.generate_key()
@@ -245,7 +241,8 @@ def register():
         encrypted_email = f.encrypt(email)
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
+        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd, encrypted_email, google_id,))
+        # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
         mysql.connection.commit()
         msg = 'You have successfully registered!'
 
@@ -264,8 +261,10 @@ def admin_register():
             # Create variables for easy access
             username = request.form['username']
             role = 'admin'
+            pwd_type='user'
             password = request.form['password']
             email = request.form['email']
+            google_id='Null'
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
@@ -298,8 +297,8 @@ def admin_register():
                 encrypted_email = f.encrypt(email)
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
-
+                # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
+                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd, encrypted_email, google_id,))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
