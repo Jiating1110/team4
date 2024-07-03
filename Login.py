@@ -353,6 +353,8 @@ def update_profile():
 
             # Open and read the symmetric key file
             with open(new_key_file_name, 'rb') as key_file:
+
+
                 key = key_file.read()
 
             f = Fernet(key)
