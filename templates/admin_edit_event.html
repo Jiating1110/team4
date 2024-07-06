@@ -1,0 +1,70 @@
+{% extends 'admin_base.html' %}
+{% block title %} Edit Event {% endblock %}
+{% block content %}
+<style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        h1 {
+            color: #0056b3;
+        }
+        form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            margin: 20px auto;
+        }
+        label {
+            font-size: 18px;
+            margin-bottom: 10px;
+            display: block;
+            color: #333;
+        }
+        input[type="text"] {
+            font-size: 16px;
+            padding: 10px;
+            width: calc(100% - 24px);
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            display: block;
+        }
+        input[type="submit"] {
+            font-size: 18px;
+            padding: 10px 20px;
+            background-color: #0056b3;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        input[type="submit"]:hover {
+            background-color: #003d99;
+        }
+        a {
+            font-size: 16px;
+            color: #0056b3;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+<h2>Edit Event</h2>
+<form action="{{ url_for('edit_event', event_id=event.id) }}" method="post">
+    <label for="title">Title:</label>
+    <input type="text" id="title" name="title" value="{{ event.title }}">
+    <label for="date">Date:</label>
+    <input type="text" id="date" name="date" value="{{ event.date }}">
+    <label for="description">Description:</label>
+    <input type="text" id="description" name="description" value="{{ event.description }}">
+    <label for="image_url">Image URL:</label>
+    <input type="text" id="image_url" name="image_url" value="{{ event.image_url }}">
+    <input type="submit" value="Save Changes">
+</form>
+<a href="{{ url_for('admin_home') }}">Back to Admin Dashboard</a>
+{% endblock %}

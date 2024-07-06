@@ -68,8 +68,20 @@ def admin_required(func):
             flash('Unauthorised Access! Only admins can access this page')
             return redirect(url_for('login'))
     return wrapper
-
-def generate_random_password(length=12):
+  
+ def save_event(title, description, date, image_url):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)', (title, description, date, image_url))
+    mysql.connection.commit()
+    cursor.close()
+def load_events():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM events')
+    events = cursor.fetchall()
+    cursor.close()
+    return events
+  
+ def generate_random_password(length=12):
     """Generate a random password with the specified length."""
     alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_+="
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
@@ -148,10 +160,6 @@ def callback():
         session['id']=account['id']
         session['username']=account['username']
     return redirect(url_for('home'))
-
-
-
-
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -320,6 +328,7 @@ def home():
 @login_required
 def admin_home():
     if 'loggedin' in session:
+
         return render_template('admin_home.html', username=session['username'])
     return redirect(url_for('login'))
 
@@ -527,6 +536,76 @@ def retrieve_users():
         return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)
         # User is not loggedin redirect to login page
     return redirect(url_for('login'))
+
+@app.route('/webapp/admin/event')
+@admin_required
+@login_required
+def admin_event():
+    if 'loggedin' in session:
+        events= load_events()
+        return render_template('admin_event.html', events=events)
+    return redirect(url_for('login'))
+@app.route('/webapp/admin/create_event', methods=['POST','GET'])
+@admin_required
+@login_required
+def create_event():
+    if 'loggedin' in session:
+        title = request.form['title']
+        date = request.form['date']
+        description = request.form['description']
+        image_url = request.form['image_url']
+
+        save_event(title, description, date, image_url)
+
+        return redirect(url_for('admin_event'))
+    else:
+        return redirect(url_for('login'))
+@app.route('/webapp/admin/edit_event/<int:event_id>', methods=['GET', 'POST'])
+@admin_required
+@login_required
+def edit_event(event_id):
+    if 'loggedin' in session:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        if request.method == 'POST':
+            title = request.form['title']
+            date = request.form['date']
+            description = request.form['description']
+            image_url = request.form['image_url']
+            cursor.execute('UPDATE events SET title = %s, date = %s, description = %s, image_url = %s WHERE id = %s',
+                           (title, date, description, image_url, event_id))
+            mysql.connection.commit()
+            cursor.close()
+            return redirect(url_for('admin_event'))
+
+        cursor.execute('SELECT * FROM events WHERE id = %s', (event_id,))
+        event = cursor.fetchone()
+        cursor.close()
+
+        return render_template('admin_edit_event.html', event=event)
+    else:
+        return redirect(url_for('login'))
+@app.route('/webapp/admin/delete_event/<event_id>', methods=['POST','GET'])
+@admin_required
+@login_required
+def delete_event(event_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('DELETE FROM events WHERE id = %s', (event_id,))
+    mysql.connection.commit()
+    cursor.close()
+    return redirect(url_for('admin_event'))
+
+
+@app.route('/webapp/events')
+@login_required
+def retrieve_events():
+    if 'loggedin' in session:
+        events = load_events()
+        return render_template('retrieve_events.html', events=events)
+    else:
+        return redirect(url_for('login'))
+
+
 #ellexys,email verification
 @app.route('/forgot_password',methods=['GET','POST'])
 @login_required
@@ -540,4 +619,4 @@ def forgot_password():
 
 
 if __name__== '__main__':
-    app.run()
+    app.run(debug=True)
