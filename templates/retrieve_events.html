@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %} Event{% endblock %}
+{% block content %}
+<h2>Event Page</h2>
+<p>Here are some events you might like!</p>
+
+<div class="event-container">
+    {% for event in events %}
+    <div class="event">
+        <img src="{{ event.image_url }}" alt="{{ event.title }}">
+        <h3>{{ event.title }}</h3>
+        <p>{{ event.description }}</p>
+        <button onclick="window.location.href='/buy_event/{{ event.id }}'">Buy Now</button>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
