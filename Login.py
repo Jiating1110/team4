@@ -69,7 +69,7 @@ def admin_required(func):
             return redirect(url_for('login'))
     return wrapper
   
- def save_event(title, description, date, image_url):
+def save_event(title, description, date, image_url):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)', (title, description, date, image_url))
     mysql.connection.commit()
@@ -81,7 +81,7 @@ def load_events():
     cursor.close()
     return events
   
- def generate_random_password(length=12):
+def generate_random_password(length=12):
     """Generate a random password with the specified length."""
     alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_+="
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
