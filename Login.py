@@ -5,6 +5,7 @@ import os
 # from pip._vendor import cachecontrol
 # import google.auth.transport.requests
 # import requests
+import stripe
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
@@ -42,7 +43,8 @@ mysql = MySQL(app)
 #     scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email", "openid"],
 #     redirect_uri="http://127.0.0.1:5000/callback"
 # )
-
+# Stripe secret key
+stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
 def login_required(f):
     @wraps(f)
@@ -509,7 +511,6 @@ def delete_event(event_id):
     cursor.close()
     return redirect(url_for('admin_event'))
 
-
 @app.route('/webapp/events')
 @login_required
 def retrieve_events():
@@ -519,17 +520,73 @@ def retrieve_events():
     else:
         return redirect(url_for('login'))
 
-
-#ellexys,email verification
-@app.route('/forgot_password',methods=['GET','POST'])
+@app.route('/webapp/admin/retrieve_orders')
+@admin_required
 @login_required
-def forgot_password():
-    pass
+def retrieve_orders():
+    if 'loggedin' in session:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute("SELECT * FROM orders")
+        orders = cursor.fetchall()
+        cursor.close()
+        return render_template('admin_order.html', orders=orders)
+    return redirect(url_for('login'))
 
+@app.route('/webapp/register_event', methods=['POST', 'GET'])
+def register_event():
+    if 'loggedin' in session:
+        if request.method == 'POST' and 'name' in request.form and 'email' in request.form and 'event' in request.form and 'payment_method' in request.form:
+            name = request.form['name']
+            email = request.form['email']
+            event = request.form['event']
+            payment_method = request.form.get('payment_method')
 
+            if payment_method == 'credit-card':
+                token = request.form['stripeToken']
+                try:
+                    # Create a new Stripe Customer
+                    customer = stripe.Customer.create(
+                        email=email,
+                        source=token
+                    )
 
+                    # Charge the Customer instead of the card
+                    charge = stripe.Charge.create(
+                        customer=customer.id,
+                        amount=5000,  # Amount in cents
+                        currency='usd',
+                        description='Event Registration'
+                    )
 
+                    # Get last 4 digits of the card
+                    card_last4 = charge.source.last4
 
+                    cust_id = session['id']
+                    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+                    cursor.execute(
+                        "INSERT INTO orders (cust_id, name, email, event, payment_method, card_last4) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (cust_id, name, email, event, payment_method, card_last4))
+                    mysql.connection.commit()
+
+                    return render_template('event_register_successfully.html')
+
+                except stripe.error.StripeError as e:
+                    return str(e), 400
+
+        return render_template('event_register.html')
+    return redirect(url_for('login'))
+
+@app.route('/delete/<int:order_id>', methods=['POST'])
+def delete(order_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("DELETE FROM orders WHERE id = %s", [order_id])
+        mysql.connection.commit()
+        cursor.close()
+        return redirect(url_for('retrieve_orders'))
+    except Exception as e:
+
+        return f"Error deleting order: {str(e)}"
 
 
 if __name__== '__main__':
