@@ -10,7 +10,7 @@
         <img src="{{ event.image_url }}" alt="{{ event.title }}">
         <h3>{{ event.title }}</h3>
         <p>{{ event.description }}</p>
-        <button onclick="window.location.href='/buy_event/{{ event.id }}'">Buy Now</button>
+        <button onclick="window.location.href='{{url_for('register_event') }}'">Buy Now</button>
     </div>
     {% endfor %}
 </div>
