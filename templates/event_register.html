@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Event Registration Payment Form{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>Event Registration Payment Form</h2>
+    <form id="payment-form" method="POST" action="{{ url_for('register_event') }}">
+        <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-group">
+            <label for="event">Event</label>
+            <input type="text" id="event" name="event" required>
+        </div>
+        <div class="form-group">
+            <label for="payment-method">Payment Method</label>
+            <select id="payment-method" name="payment_method">
+                <option value="credit-card">Credit Card</option>
+                <!-- Add more options for other payment methods as needed -->
+            </select>
+        </div>
+        <div id="credit-card-details">
+            <div class="form-group">
+                <label for="card-element">Card Details</label>
+                <div id="card-element"></div>
+            </div>
+        </div>
+        <button class="btn" type="submit">Submit Payment</button>
+
+    </form>
+</div>
+
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+    var stripe = Stripe('pk_test_51PZuEKCYAKRWJ1BC9dD5WF594YbyqnEfrtB2BfhnP5Wk3yqfCHzT8fsfcw4C7FljwFJeydR2eEEOAd5kv4d0Esh700atKn6rfm'); // Replace with your actual Stripe publishable key
+    var elements = stripe.elements();
+    var cardElement = elements.create('card');
+    cardElement.mount('#card-element');
+
+    // Form submission handler
+    document.getElementById('payment-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        stripe.createToken(cardElement).then(function(result) {
+            if (result.error) {
+                var errorElement = document.getElementById('card-number-error');
+                errorElement.textContent = result.error.message;
+            } else {
+                var form = document.getElementById('payment-form');
+                var hiddenInput = document.createElement('input');
+                hiddenInput.setAttribute('type', 'hidden');
+                hiddenInput.setAttribute('name', 'stripeToken');
+                hiddenInput.setAttribute('value', result.token.id);
+                form.appendChild(hiddenInput);
+
+                form.submit();
+            }
+        });
+    });
+</script>
+{% endblock %}
