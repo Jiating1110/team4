@@ -1,14 +1,11 @@
+
 import os
-# import pathlib
-# from google.oauth2 import id_token
-# from google_auth_oauthlib.flow import Flow
-# from pip._vendor import cachecontrol
-# import google.auth.transport.requests
-# import requests
 import stripe
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,ChangePassword
-from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
+from flask import Flask, render_template, request, redirect, url_for, session,flash
+from datetime import datetime,timedelta
+import time
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 from flask_bcrypt import Bcrypt   #buy the blender
@@ -16,6 +13,7 @@ bcrypt = Bcrypt()   #initializing the blender
 import cryptography
 from cryptography.fernet import Fernet
 from functools import wraps
+
 
 
 import re
@@ -32,18 +30,10 @@ app.config['MYSQL_DB'] = 'pythonlogin'
 #DO NOTE THAT THE MYSQL SERVER INSTANCE IN THE LAB IS RUNNING ON PORT 3360.
 #Please make necessary change to the above MYSQL_PORT config
 app.config['MYSQL_PORT'] = 3306
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=30)
 # Intialize MySQL
 mysql = MySQL(app)
 
-# os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-# google_client_id="494648185587-331iamoak392u2o7bl1h2ornokj4qmse.apps.googleusercontent.com"
-# client_secrets_file=os.path.join(pathlib.Path(__file__).parent,"client_secret.json")
-# flow = Flow.from_client_secrets_file(
-#     client_secrets_file=client_secrets_file,
-#     scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email", "openid"],
-#     redirect_uri="http://127.0.0.1:5000/callback"
-# )
-# Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
 def login_required(f):
@@ -81,6 +71,35 @@ def load_events():
     events = cursor.fetchall()
     cursor.close()
     return events
+
+def log_session_activity(user_id, username, action):
+    with mysql.connection.cursor() as cursor:
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('INSERT INTO session_logs (user_id, username, action, timestamp) VALUES (%s, %s, %s, %s)',
+                       (user_id, username, action, timestamp))
+        mysql.connection.commit()
+@app.before_request
+def log_session():
+    if 'username' in session:
+        user_id = session.get('id')
+        username = session.get('username')
+        action = 'login' if 'loggedin' in session else 'timeout'  # Determine action based on session state
+        log_session_activity(user_id, username, action)
+def session_timeout_required(f):
+    @wraps(f)
+    def decorated_func(*args, **kwargs):
+        if 'session_time' in session:
+            print("Checking session timeout")
+            print(int(time.time()))
+            print("Session TIme:" + str(session['session_time']))
+            session_time = session['session_time']
+            if int(time.time()) - session_time > 30:
+                return redirect(url_for('logout'))
+            session['session_time'] = int(time.time())
+        else:
+            return redirect(url_for('logout'))
+        return f(*args, **kwargs)
+    return decorated_func
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -234,6 +253,7 @@ def admin_register():
         return render_template('admin_register.html', msg=msg)
     return redirect(url_for('login'))
 @app.route('/webapp/home')
+# @session_timeout_required
 @login_required
 def home():
     if 'loggedin' in session:
