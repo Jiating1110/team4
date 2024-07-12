@@ -6,13 +6,13 @@ from pip._vendor import cachecontrol
 import google.auth.transport.requests
 import requests
 import secrets
-
 from flask_mail import Mail
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import jwt
 from time import time
+from datetime import date,timedelta,datetime
 
 import stripe
 
@@ -108,7 +108,7 @@ def generate_random_password(length=12):
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     return password
 
-def get_reset_token(user,expires=500):
+def get_reset_token(user,expires=200):
     try:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT username FROM accounts WHERE email = %s', (user,))
@@ -205,9 +205,10 @@ def callback():
         hashpwd=bcrypt.generate_password_hash(password)
         email = session['email']
         google_id=session['google_id']
+        last_pwd_change=date.today()
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type,hashpwd,email,google_id,))
+        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',(role, username, pwd_type,hashpwd,last_pwd_change,email,google_id,))
         mysql.connection.commit()
         print('google create acc,successfully')
 
@@ -221,6 +222,7 @@ def callback():
         session['loggedin']=True
         session['id']=account['id']
         session['username']=account['username']
+
     return redirect(url_for('home'))
 
 @app.route('/', methods=['GET', 'POST'])
@@ -244,12 +246,20 @@ def login():
                 session['username'] = account['username']
                 session['role']=account['role']
 
-                if account['role']=='admin' or account['role']=='super_admin':
-                    return redirect(url_for('admin_home'))
-                else:
-                    flash('You successfully log in ')
-                    return redirect(url_for('home'))
+                last_pwd_change=account['last_pwd_change']
 
+
+                date_difference=date.today()-last_pwd_change
+                print('login check date difference',date_difference)
+                if date_difference >= timedelta(days=3):
+                    flash('Your Password Already 3 days.Please change your password')
+                    return redirect(url_for('change_password'))
+                else:
+                    if account['role']=='admin' or account['role']=='super_admin':
+                        return redirect(url_for('admin_home'))
+                    else:
+                        flash('You successfully log in ')
+                        return redirect(url_for('home'))
             else:
                 msg = 'Incorrect username/password!'
         else:
@@ -278,10 +288,27 @@ def register():
         role='customer'
         pwd_type='user'
         google_id='Null'
-        hashpwd = bcrypt.generate_password_hash(password)
+        last_pwd_change=date.today()
+        hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd, email, google_id,))
+        cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
+        account=cursor.fetchone()
+        if account:
+            if account['username']==username:
+                flash('Username has been taken. Please choose a different username')
+                return render_template('register.html', msg=msg, form=register_form)
+
+        user_file = f"{username}_pwd"
+        try:
+            file=open(user_file,'w')
+            file.write("{}\n".format(hashpwd))
+            print(f"Hashed password successfully written to {user_file}")
+        except Exception as e:
+            print(f"Error writing hashed password to file: {e}")
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
         mysql.connection.commit()
         msg = 'You have successfully registered!'
 
@@ -296,14 +323,25 @@ def admin_register():
         # Output message if something goes wrong...
         msg = ''
         # Check if "username", "password" and "email" POST requests exist (user submitted form)
-        if request.method == 'POST' and 'username' in request.form and 'password' in request.form and 'email' in request.form:
-            # Create variables for easy access
-            username = request.form['username']
-            role = 'admin'
-            pwd_type='user'
-            password = request.form['password']
-            email = request.form['email']
-            google_id='Null'
+        # if request.method == 'POST' and 'username' in request.form and 'password' in request.form and 'email' in request.form:
+        #     # Create variables for easy access
+        #     username = request.form['username']
+        #     password = request.form['password']
+        #     email = request.form['email']
+        #     role = 'admin'
+        #     pwd_type='user'
+        #     google_id='Null'
+        #     last_pwd_change = date.today()
+        msg = ''
+        register_form = RegisterForm(request.form)
+        if request.method == 'POST' and register_form.validate():
+            username = register_form.username.data
+            password = register_form.password.data
+            email = register_form.email.data
+            role = 'customer'
+            pwd_type = 'user'
+            google_id = 'Null'
+            last_pwd_change = date.today()
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
@@ -314,14 +352,21 @@ def admin_register():
                 if account['username'] == username:
                     msg = 'Username has been taken. Please choose a different username'
 
-                return render_template('admin_register.html', msg=msg)
+                return render_template('admin_register.html', msg=msg,form=register_form)
             else:
                 # Account doesnt exists and the form data is valid, now insert new account into accounts table
-                hashpwd = bcrypt.generate_password_hash(password)
+                hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
+
+                user_file = f"{username}_pwd"
+                try:
+                    file = open(user_file, 'w')
+                    file.write("{}\n".format(hashpwd))
+                    print(f"Hashed password successfully written to {user_file}")
+                except Exception as e:
+                    print(f"Error writing hashed password to file: {e}")
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd, email, google_id,))
+                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
@@ -330,7 +375,7 @@ def admin_register():
             # Form is empty... (no POST data)
             msg = 'Please fill out the form!'
             # Show registration form with message (if any)
-        return render_template('admin_register.html', msg=msg)
+        return render_template('admin_register.html', msg=msg,form=register_form)
     return redirect(url_for('login'))
 @app.route('/webapp/home')
 @login_required
@@ -425,18 +470,27 @@ def reset_password(token):
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE pwd_type = %s', (user['pwd_type'],))
         account = cursor.fetchone()
+        username=account['username']
         if newpwd == confirm_password:
-            hashpwd = bcrypt.generate_password_hash(confirm_password)
+            hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
+
+            user_file = f"{username}_pwd"
+            try:
+                file = open(user_file, 'w')
+                file.write("{}\n".format(hashpwd))
+                print(f"Hashed password successfully written to {user_file}")
+            except Exception as e:
+                print(f"Error writing hashed password to file: {e}")
+
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE pwd_type = %s', (user['pwd_type'],))
             account = cursor.fetchone()
             if account['pwd_type'] == 'random':
                 pwd_type = 'user'
-                cursor.execute('UPDATE accounts SET password = %s, pwd_type=%s   WHERE username = %s', (hashpwd,pwd_type,user['username']))
+                cursor.execute('UPDATE accounts SET password = %s, pwd_type=%s  WHERE username = %s', (hashpwd,pwd_type,user['username']))
                 mysql.connection.commit()
                 print( 'You have successfully update!')
                 return render_template('reset_pwd_successfully.html',email=email)
-                # return redirect(url_for('profile'))
             else:
                 cursor.execute('UPDATE accounts SET password = %s WHERE username = %s',(hashpwd, user['username']))
                 mysql.connection.commit()
@@ -488,6 +542,7 @@ def verify_password():
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
             user_hashpwd=account['password']
+            print('verify pwd',user_hashpwd)
 
             if account and bcrypt.check_password_hash(user_hashpwd,pwd):
                 return redirect(url_for('change_password'))
@@ -513,9 +568,34 @@ def change_password():
             role=account['role']
 
             if newpwd==confirm_password:
-                hashpwd = bcrypt.generate_password_hash(confirm_password)
+                hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
+
+                user_file = f"{username}_pwd"
+                #check pwd history
+                try:
+                    file=open(user_file,'r+')
+                    pwd_history=file.readlines()
+                    pwd_history = [pwd.strip() for pwd in pwd_history]
+
+                    for old_pwd in pwd_history:
+                        if bcrypt.check_password_hash(old_pwd,newpwd):
+                            flash('New password cannot be one of the previosly used passwords')
+                            return redirect(url_for('change_password'))
+                    if len(pwd_history)>=3:
+                        pwd_history = pwd_history[1:]
+                    pwd_history.append(hashpwd)
+                    print('change pwd line', pwd_history)
+
+                    file.seek(0)
+                    file.truncate()  # Clear existing content
+                    file.writelines(pwd + '\n' for pwd in pwd_history)
+                except FileNotFoundError:
+                    file = open(user_file, 'w')
+                    file.write("{}\n".format(hashpwd))
+
+                last_pwd_change=date.today()
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('UPDATE accounts SET password = %s WHERE id = %s', (hashpwd, session['id']))
+                cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s', (hashpwd,last_pwd_change,session['id']))
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
                 return render_template('change_pwd_successfully.html',username=username,role=role)
@@ -537,26 +617,6 @@ def retrieve_users():
         users_count = count['users_count']
         cursor.execute('SELECT * FROM accounts')
         users_info = cursor.fetchall()
-
-        for user in users_info:
-            encrypted_email = user['email'].encode()
-            username = user['username']
-            key_file_name = f"{username}_symmetric.key"
-
-            if not os.path.exists(key_file_name):
-                return f"Symmetric key file not found for user {username}."
-
-            with open(key_file_name, 'rb') as key_file:
-                key = key_file.read()
-
-            f = Fernet(key)
-            decrypted_email = f.decrypt(encrypted_email)
-            email = decrypted_email.decode()
-
-            email_parts = email.split('@')
-            masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
-
-            user['email'] = masked_email
 
         # Show the profile page with account info
         return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)

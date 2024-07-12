@@ -4,6 +4,19 @@
 <h2>Change Password</h2>
 <p>Strong password required.Enter 8-256 characters.Do not include common words or names.
 Combine uppercase letter,lowercase letters,numbers and symbols.</p>
+
+{% with messages = get_flashed_messages() %}
+    {% if messages %}
+        {% for message in messages %}
+            <div  class="alert alert-warning alert-dismissable " role="alert">
+                <span>{{message}}</span>
+            <button type="button" class="close" data-bs-dismiss="alert" aria-label ="close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
 <div>
     <form method="POST" action="">
         <table>
@@ -15,6 +28,16 @@ Combine uppercase letter,lowercase letters,numbers and symbols.</p>
                 <td>Confirm Password:</td>
                 <td>{{ form.confirmpwd }}</td>
             </tr>
+             <div id="password-errors">
+
+            {% if form.confirmpwd.errors %}
+                <ul class="errors">
+                    {% for error in form.confirmpwd.errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </div>
         </table>
 
         <div class="msg">{{ msg }}</div>
