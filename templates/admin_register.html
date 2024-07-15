@@ -13,6 +13,16 @@
 			<div class="links">
 				<a href="{{ url_for('admin_register') }}" class="active">Register</a>
 			</div>
+			{% with messages = get_flashed_messages() %}
+				{% if messages %}
+					{% for message in messages %}
+						<div class="alert alert-success alert-dismissible fade show" role="alert">
+							{{ message }}
+							<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+						</div>
+					{% endfor %}
+				{% endif %}
+			{% endwith %}
 			<form action="{{ url_for('admin_register') }}" method="post" autocomplete="off">
 
 				<label for="username">

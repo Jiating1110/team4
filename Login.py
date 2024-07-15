@@ -7,7 +7,7 @@ import os
 # import requests
 import stripe
 
-from Forms import RegisterForm,LoginForm,UpdateProfileForm,ChangePassword
+from Forms import RegisterForm,LoginForm,UpdateProfileForm,ChangePassword, OTPVerifyForm
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -16,6 +16,8 @@ bcrypt = Bcrypt()   #initializing the blender
 import cryptography
 from cryptography.fernet import Fernet
 from functools import wraps
+import random
+import vonage
 
 
 import re
@@ -45,7 +47,11 @@ mysql = MySQL(app)
 # )
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
+app.config['RECAPTCHA_PUBLIC_KEY'] = '6LeaSwUqAAAAAJQ-YP7y_seOSo9YvqjdPAzxEWzy'
+app.config['RECAPTCHA_PRIVATE_KEY'] = '6LeaSwUqAAAAALrtgi3HJTwYRQsrOsfbmU_LjgQF'
 
+client = vonage.Client(key="414b203b", secret="5S1gPFOBDlLiW29t")
+sms = vonage.Sms(client)
 def login_required(f):
     @wraps(f)
     def wrap(*args,**kwargs):
@@ -70,6 +76,39 @@ def admin_required(func):
             return redirect(url_for('login'))
     return wrapper
 
+def generate_otp():
+    otp = ''
+    for i in range(6):
+         otp += str(random.randint(0,9))
+    return otp
+
+def verification_code(phone_number):
+    if 'loggedin' in session:
+        username = session['username']
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+        account = cursor.fetchone()
+
+        if account:
+            otp = generate_otp()
+            print(otp)
+            responseData = sms.send_message(
+                {
+                    "from": "Vonage APIs",
+                    "to": phone_number,
+                    "text": f'OTP verification code: {otp} ',
+                }
+            )
+            if responseData["messages"][0]["status"] == "0":
+                 print("Message sent successfully.")
+                 return otp
+            else:
+                 print(f"Message failed with error: {responseData['messages'][0]['error-text']}")
+                 return None
+        else:
+            print('Error in finding phone_number')
+            return None
+
 def save_event(title, description, date, image_url):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)', (title, description, date, image_url))
@@ -90,18 +129,17 @@ def login():
         username=login_form.username.data
         password=login_form.password.data
         print(password)
-
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
         # Fetch one record and return result
-        account = cursor.fetchone() #if account dont exist in db, return 0
+        account = cursor.fetchone()  # if account dont exist in db, return 0
         if account:
             user_hashpwd = account['password']
             if account and bcrypt.check_password_hash(user_hashpwd, password):
                 session['loggedin'] = True
                 session['id'] = account['id']
                 session['username'] = account['username']
-                session['role']=account['role']
+                session['role'] = account['role']
 
                 encrypted_email = account['email'].encode()
 
@@ -120,11 +158,11 @@ def login():
                 decrypted_email = f.decrypt(encrypted_email)
                 email = decrypted_email.decode()
 
-                if account['role']=='admin' or account['role']=='super_admin':
-                    return redirect(url_for('admin_home'))
+                if account['role'] == 'admin' or account['role'] == 'super_admin':
+                    return redirect(url_for('verify_otp'))
                 else:
                     flash('You successfully log in ')
-                    return redirect(url_for('home'))
+                    return redirect(url_for('verify_otp'))
 
             else:
                 msg = 'Incorrect username/password!'
@@ -152,25 +190,28 @@ def register():
         password=register_form.password.data
         email=register_form.email.data
         role='customer'
-        hashpwd = bcrypt.generate_password_hash(password)
 
-        key = Fernet.generate_key()
-        # Write Symmetric key to file – wb:write and close file
-        key_file_name = f"{username}_symmetric.key"
-        with open(key_file_name, "wb") as fo:
-            fo.write(key)
-        # Initialize Fernet Class
-        f = Fernet(key)
+        if 'verify' == False:
+            msg = 'Please complete CAPTCHA'
+        else:
+            hashpwd = bcrypt.generate_password_hash(password)
+            key = Fernet.generate_key()
+            # Write Symmetric key to file – wb:write and close file
+            key_file_name = f"{username}_symmetric.key"
+            with open(key_file_name, "wb") as fo:
+                fo.write(key)
+            # Initialize Fernet Class
+            f = Fernet(key)
 
-        # convert email address to bytes before saving to Database
-        email = email.encode()
-        # Encrypt email address
-        encrypted_email = f.encrypt(email)
+            # convert email address to bytes before saving to Database
+            email = email.encode()
+            # Encrypt email address
+            encrypted_email = f.encrypt(email)
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
-        mysql.connection.commit()
-        msg = 'You have successfully registered!'
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6589124852'))
+            mysql.connection.commit()
+            msg = 'You have successfully registered!'
 
     return render_template('register.html', msg=msg,form=register_form)
 @app.route('/webapp/admin/register', methods=['GET', 'POST'])
@@ -179,17 +220,18 @@ def register():
 def admin_register():
     if 'loggedin' in session:
         if not super_admin() == True:
-            return 'Unauthorised Access! Only super admins can create admin accounts'
+            flash('Unauthorised Access! Only super admins can create admin accounts')
+            return redirect(url_for('admin_home'))
         # Output message if something goes wrong...
         msg = ''
+        register_form = RegisterForm(request.form)
         # Check if "username", "password" and "email" POST requests exist (user submitted form)
         if request.method == 'POST' and 'username' in request.form and 'password' in request.form and 'email' in request.form:
             # Create variables for easy access
-            username = request.form['username']
             role = 'admin'
-            password = request.form['password']
-            email = request.form['email']
-
+            username = register_form.username.data
+            password = register_form.password.data
+            email = register_form.email.data
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
             # cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, email))
@@ -221,18 +263,92 @@ def admin_register():
                 encrypted_email = f.encrypt(email)
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s)', (role,username, hashpwd, encrypted_email,))
+                cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6589124852'))
 
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
-                return render_template('admin_home.html', msg=msg,username=session['username'])
+                return render_template('admin_home.html', msg=msg,form=register_form)
         elif request.method == 'POST': #verify if theres an input
             # Form is empty... (no POST data)
             msg = 'Please fill out the form!'
             # Show registration form with message (if any)
-        return render_template('admin_register.html', msg=msg)
+        return render_template('admin_register.html', msg=msg,form=register_form)
     return redirect(url_for('login'))
+
+@app.route('/verify_otp', methods=['GET','POST'])
+@login_required
+def verify_otp():
+    msg = ''
+    if 'loggedin' not in session:
+         return redirect(url_for('login'))
+    if 'verify' == False:
+         print("CAPTCHA verification is required")
+         return redirect(url_for('login'))
+    otp_form = OTPVerifyForm(request.form)
+    if request.method == 'POST':
+        if request.form['resend_otp']:
+            resend_otp()
+        if request.form['confirm_otp']:
+            confirm_otp()
+    session['otp_verified'] = False
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+
+    if account:
+         phone_number = account['phone_number']
+         otp = verification_code(phone_number)
+         if otp:
+             session['phone_number'] = phone_number
+             session['otp'] = otp
+         else:
+           print('Error in sending OTP')
+    else:
+         print('Error in finding phone_number')
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+
+@app.route('/confirm_otp', methods=['GET','POST'])
+@login_required
+def confirm_otp():
+    otp_form = OTPVerifyForm(request.form)
+    entered_otp = request.form['otp']
+    print(session['otp'])
+    if entered_otp == session['otp']:
+        if entered_otp == session['otp']:
+            session['otp_verified'] = True
+            if session['role'] == 'admin' or session['role'] == 'super_admin':
+                msg = 'Success!'
+                return redirect(url_for('admin_home', msg=msg))
+            else:
+                msg = 'You have successfully logged in '
+                return redirect(url_for('home', msg=msg))
+        else:
+            msg = 'Incorrect. Please try again'
+    else:
+        msg = 'Incorrect. Please try again'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/resend_otp', methods=['GET','POST'])
+@login_required
+def resend_otp():
+    otp_form = OTPVerifyForm(request.form)
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        phone_number = account['phone_number']
+        otp = verification_code(phone_number)
+        if otp:
+            session['phone_number'] = phone_number
+            session['otp'] = otp
+            msg = 'OTP has been resent. Please try again'
+        else:
+            msg = 'Error in sending OTP'
+    else:
+        msg= 'Error in finding phone_number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
 @app.route('/webapp/home')
 @login_required
 def home():
@@ -425,7 +541,7 @@ def retrieve_users():
         cursor.execute('SELECT COUNT(*) AS users_count FROM accounts')
         count = cursor.fetchone()
         users_count = count['users_count']
-        cursor.execute('SELECT * FROM accounts')
+        cursor.execute('SELECT username, role, email, phone_number FROM accounts')
         users_info = cursor.fetchall()
 
         for user in users_info:
@@ -447,6 +563,11 @@ def retrieve_users():
             masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
 
             user['email'] = masked_email
+
+            phone_number = user['phone_number']
+            masked_phone_no = f"{phone_number[2]}******{phone_number[-2:]}"
+
+            user['phone_number'] = masked_phone_no
 
         # Show the profile page with account info
         return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)

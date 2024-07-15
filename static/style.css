@@ -26,13 +26,13 @@ body {
   	padding: 20px 0 20px 0;
 
 }
-.login, .register {
+.login, .register, .verify_otp {
   	width: 400px;
   	background-color: #ffffff;
   	box-shadow: 0 0 9px 0 rgba(0, 0, 0, 0.3);
   	margin: 100px auto;
 }
-.login h1, .register h1 {
+.login h1, .register h1, .verify_otp h1 {
   	text-align: center;
   	color: #5b6574;
   	font-size: 24px;
@@ -57,7 +57,7 @@ body {
   	border-bottom: 3px solid #3274d6;
   	color: #3274d6;
 }
-.login form, .register form {
+.login form, .register form, .verify_otp form {
   	display: flex;
   	flex-wrap: wrap;
   	justify-content: center;
@@ -98,7 +98,7 @@ body {
   	justify-content: center;
   	padding-top: 20px;
 }
-.login form label, .register form label {
+.login form label, .register form label, .verify_otp form label {
   	display: flex;
   	justify-content: center;
   	align-items: center;
@@ -107,14 +107,14 @@ body {
   	background-color: #3274d6;
   	color: #ffffff;
 }
-.login form input[type="password"], .login form input[type="text"], .login form input[type="email"], .register form input[type="password"], .register form input[type="text"], .register form input[type="email"] {
+.login form input[type="password"], .login form input[type="text"], .login form input[type="email"], .register form input[type="password"], .register form input[type="text"], .register form input[type="email"], .verify_otp form input[type="text"] {
   	width: 310px;
   	height: 50px;
   	border: 1px solid #dee0e4;
   	margin-bottom: 20px;
   	padding: 0 15px;
 }
-.login form input[type="submit"], .register form input[type="submit"] {
+.login form input[type="submit"], .register form input[type="submit"], #confirm_otp {
   	width: 100%;
   	padding: 15px;
   	margin-top: 20px;
@@ -125,7 +125,7 @@ body {
   	color: #ffffff;
   	transition: background-color 0.2s;
 }
-.login form input[type="submit"]:hover, .register form input[type="submit"]:hover {
+.login form input[type="submit"]:hover, .register form input[type="submit"]:hover, #confirm_otp:hover {
   	background-color: #2868c7;
   	transition: background-color 0.2s;
 }
@@ -302,5 +302,15 @@ body.loggedin {
 .event p {
     font-size: 16px;
     margin: 0 0 10px; /* Adjust margin below description */
+}
+
+#resend_otp {
+    color:blue;
+}
+#resend_otp:visited {
+    color:blue;
+}
+#enterOTP {
+    text-align:center;
 }
 

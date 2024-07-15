@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sliding</title>
+    <style>
+        body {
+            display:flex;
+            flex-direction:column;
+            justify-content: center;
+            align-items:center;
+            height: 100vh;
+            margin:0;
+        }
+        .container {
+            position:relative;
+            width:400px;
+            height:auto;
+        }
+        .puzzle-container {
+            position:relative;
+            width:100%;
+            height:auto;
+            margin-bottom:5px;
+        }
+        #img-puzzle {
+            width:100%;
+            height:auto;
+            object-fit:cover;
+            padding: 0 15px 0 15px;
+        }
+        .puzzle-piece{
+            position:absolute;
+            width:50px;
+            height:50px;
+            left:20px;
+            border:  1px solid white;
+            top: 80px;
+            background: url('{{ url_for('static', filename='cropped_puzzle_piece.png') }}') no-repeat center center;
+            background-size:cover;
+            z-index:1;
+        }
+        .target-area{
+            position:absolute;
+            top: 80px;
+            right:150px;
+            width:50px;
+            height:50px;
+            background-color: rgba(255,255,255,0.6);
+            border: 1px solid white;
+        }
+        .slider-container {
+            padding: 0 15px 0 15px;
+        }
+        #slider{
+            position:relative;
+            width:100%;
+            cursor: pointer;
+        }
+        p {
+            text-align: center;
+        }
+        .button {
+            display:flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #msg {
+            text-align: center;
+        }
+
+    </style>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.1/css/all.css">
+</head>
+<body>
+    <br>
+    <p>Slide to complete the puzzle</p>
+    <div class="container">
+        <div class="puzzle-container">
+            <img src="{{ url_for('static', filename= 'scenery.png') }}" alt="Image Puzzle" id="img-puzzle">
+            <div class="puzzle-piece" id="puzzle-piece"></div>
+            <div class="target-area" id="target-area"></div>
+        </div>
+        <div class="slider-container">
+            <input type="range" min="0" max="100" value="0" id="slider">
+        </div>
+        <div class="button">
+            <input type="button" id="verifyCaptcha" value="Verify Captcha">
+        </div>
+        <div class="msg" id="msg">{{ msg }}</div>
+    </div>
+    <script>
+        const slider = document.getElementById("slider");
+        const puzzlePiece = document.getElementById("puzzle-piece");
+        const puzzleContainer = document.querySelector(".puzzle-container");
+        const targetArea = document.getElementById("target-area");
+        const verifyCaptcha = document.getElementById("verifyCaptcha");
+        const msg = document.getElementById("msg");
+
+        let activePuzzlePiece = puzzlePiece;
+
+        slider.addEventListener("input", function() {
+            const maxOffset = puzzleContainer.offsetWidth - activePuzzlePiece.offsetWidth;
+            const offset = (slider.value/100)*maxOffset;
+            activePuzzlePiece.style.left = offset + 'px';
+        });
+        verifyCaptcha.addEventListener("click",function() {
+            if (updatePuzzlePiecePos()){
+                msg.textContent = "Verification successful!";
+                slider.disabled = true;
+                verifyCaptcha.disabled = true;
+                return true;
+            } else{
+                msg.textContent = "Incorrect. Please try again";
+                return false;
+            }
+        });
+        function updatePuzzlePiecePos() {
+            const pieceLeft = puzzlePiece.getBoundingClientRect().left;
+            const targetLeft = targetArea.getBoundingClientRect().left;
+            const tolerance = 5;
+            return (Math.abs(pieceLeft-targetLeft) <= tolerance && activePuzzlePiece === puzzlePiece);
+        }
+        puzzlePiece.addEventListener("click", function() {
+            activePuzzlePiece = this;
+            slider.value = 0;
+            puzzlePiece.style.left = '10px';
+        });
+    </script>
+</body>
+</html>
