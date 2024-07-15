@@ -704,6 +704,7 @@ def retrieve_orders():
     return redirect(url_for('login'))
 
 @app.route('/webapp/register_event', methods=['POST', 'GET'])
+@login_required
 def register_event():
     if 'loggedin' in session:
         if request.method == 'POST' and 'name' in request.form and 'email' in request.form and 'event' in request.form and 'payment_method' in request.form:
@@ -748,6 +749,8 @@ def register_event():
     return redirect(url_for('login'))
 
 @app.route('/delete/<int:order_id>', methods=['POST'])
+@admin_required
+@login_required
 def delete(order_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     try:
