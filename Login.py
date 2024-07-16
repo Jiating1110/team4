@@ -108,59 +108,6 @@ def generate_random_password(length=12):
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     return password
 
-def get_reset_token(user,expires=200):
-    try:
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT username FROM accounts WHERE email = %s', (user,))
-        account = cursor.fetchone()
-        username=account['username']
-        if not account:
-            return None
-        token=jwt.encode({'reset_password':username,'exp':time()+expires},key=app.secret_key,algorithm='HS256')
-        return token
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-def verify_reset_token(token):
-    try:
-        decoded_token = jwt.decode(token, key=app.secret_key, algorithms=['HS256'])
-        username = decoded_token.get('reset_password')
-        if not username:
-            return None
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
-        account = cursor.fetchone()
-        if not account:
-            return None
-
-        return account
-    except jwt.ExpiredSignatureError:
-        return None  # Token has expired
-    except jwt.InvalidTokenError:
-        return None  # Invalid token
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-def send_mail(user):
-    msg = MIMEMultipart()
-    msg['From'] = os.getenv('345ting678ting@gmail.com')
-    msg['To'] = user
-    msg['Subject'] = 'Change Password'
-    token=get_reset_token(user)
-    reset_url = url_for('reset_password', token=token, _external=True)
-    body = f"""To change your password, please follow the link below:
-    {reset_url}
-
-    If you didn't send a password reset request, please ignore this message."""
-    msg.attach(MIMEText(body, 'plain'))
-
-    server = smtplib.SMTP(app.config['MAIL_SERVER'] ,app.config['MAIL_PORT'])
-    server.starttls()
-    server.login(app.config['MAIL_USERNAME'],app.config['MAIL_PASSWORD'])
-    server.sendmail(app.config['MAIL_USERNAME'], msg['To'], msg.as_string())
-    server.quit()
-
-    print('Email sent successfully.')
 
 @app.route("/google")
 def google_login():
@@ -170,7 +117,12 @@ def google_login():
 
 @app.route("/callback")
 def callback():
-    flow.fetch_token(authorization_response=request.url)
+    try:
+        flow.fetch_token(authorization_response=request.url)
+    except :
+        print("Access denied error")
+        flash("Failed to login with Google")
+        return redirect(url_for('login'))
 
     if not session["state"] == request.args["state"]:
         abort(500)  # State does not match!
@@ -215,7 +167,6 @@ def callback():
         session['loggedin'] = True
         session['id'] = cursor.lastrowid
         session['username'] = session['name']
-        # return render_template('home.html')
     else:
         #if database have account
 
@@ -320,18 +271,7 @@ def admin_register():
     if 'loggedin' in session:
         if not super_admin() == True:
             return 'Unauthorised Access! Only super admins can create admin accounts'
-        # Output message if something goes wrong...
-        msg = ''
-        # Check if "username", "password" and "email" POST requests exist (user submitted form)
-        # if request.method == 'POST' and 'username' in request.form and 'password' in request.form and 'email' in request.form:
-        #     # Create variables for easy access
-        #     username = request.form['username']
-        #     password = request.form['password']
-        #     email = request.form['email']
-        #     role = 'admin'
-        #     pwd_type='user'
-        #     google_id='Null'
-        #     last_pwd_change = date.today()
+
         msg = ''
         register_form = RegisterForm(request.form)
         if request.method == 'POST' and register_form.validate():
@@ -452,6 +392,59 @@ def update_profile():
 
 
 
+def get_reset_token(user,expires=200):
+    try:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT username FROM accounts WHERE email = %s', (user,))
+        account = cursor.fetchone()
+        username=account['username']
+        if not account:
+            return None
+        token=jwt.encode({'reset_password':username,'exp':time()+expires},key=app.secret_key,algorithm='HS256')
+        return token
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+def verify_reset_token(token):
+    try:
+        decoded_token = jwt.decode(token, key=app.secret_key, algorithms=['HS256'])
+        username = decoded_token.get('reset_password')
+        if not username:
+            return None
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+        account = cursor.fetchone()
+        if not account:
+            return None
+
+        return account
+    except jwt.ExpiredSignatureError:
+        return None  # Token has expired
+    except jwt.InvalidTokenError:
+        return None  # Invalid token
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+def send_mail(user):
+    msg = MIMEMultipart()
+    msg['From'] = os.getenv('345ting678ting@gmail.com')
+    msg['To'] = user
+    msg['Subject'] = 'Change Password'
+    token=get_reset_token(user)
+    reset_url = url_for('reset_password', token=token, _external=True)
+    body = f"""To change your password, please follow the link below:
+    {reset_url}
+
+    If you didn't send a password reset request, please ignore this message."""
+    msg.attach(MIMEText(body, 'plain'))
+
+    server = smtplib.SMTP(app.config['MAIL_SERVER'] ,app.config['MAIL_PORT'])
+    server.starttls()
+    server.login(app.config['MAIL_USERNAME'],app.config['MAIL_PASSWORD'])
+    server.sendmail(app.config['MAIL_USERNAME'], msg['To'], msg.as_string())
+    server.quit()
+
+    print('Email sent successfully.')
 
 @app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
@@ -555,6 +548,7 @@ def verify_password():
 @login_required
 def change_password():
     if 'loggedin' in session:
+        print('hhh')
         msg=' '
         pwd_form=ChangePassword(request.form)
         if request.method=='POST' and pwd_form.validate():
