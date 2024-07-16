@@ -6,6 +6,7 @@
 Combine uppercase letter,lowercase letters,numbers and symbols.</p>
 <div>
     <form method="POST" action="">
+        {{ form.csrf_token }}
         <table>
             <tr>
                 <td>New Password:</td>
@@ -16,7 +17,14 @@ Combine uppercase letter,lowercase letters,numbers and symbols.</p>
                 <td>{{ form.confirmpwd }}</td>
             </tr>
         </table>
-
+        {{ form.recaptcha }}
+        {% if form.recaptcha.errors %}
+                <ul>
+                    {% for error in form.recaptcha.errors %}
+                        <li style="color:red;">{{ error }}</li>
+                    {% endfor %}
+                </ul>
+        {% endif %}
         <div class="msg">{{ msg }}</div>
         <input type="submit" value="Confirm" >
 
