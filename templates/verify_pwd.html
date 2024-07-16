@@ -1,0 +1,21 @@
+{% extends 'update_acc_base.html' %}
+{% block title %} Change Password {% endblock %}
+{% block content %}
+<h2>Veriy Password</h2>
+
+<div>
+    <form method="POST" action="">
+        <table>
+            <tr>
+                <td>Password:</td>
+                <td>{{ form.pwd }}</td>
+            </tr>
+
+        </table>
+
+        <div class="msg">{{ msg }}</div>
+        <input type="submit" value="Confirm" >
+
+    </form>
+</div>
+{% endblock %}

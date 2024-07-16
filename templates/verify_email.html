@@ -1,0 +1,21 @@
+{% extends 'update_acc_base.html' %}
+{% block title %} Verify Email {% endblock %}
+{% block content %}
+<h2>Verify Email</h2>
+
+<div>
+    <form method="POST" action="">
+        <table>
+            <tr>
+                <td>Email:</td>
+                <td>{{ form.email }}</td>
+            </tr>
+
+        </table>
+
+        <div class="msg">{{ msg }}</div>
+        <input type="submit" value="Confirm" >
+
+    </form>
+</div>
+{% endblock %}
