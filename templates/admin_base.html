@@ -28,3 +28,40 @@
 		</div>
 	</body>
 </html>
+<script>
+    let warningTime = 25 * 1000; // Time before session expires to show the warning (in milliseconds)
+    let logoutTime = 30 * 1000; // Session expiration time (in milliseconds)
+
+    function showWarning() {
+        let userConfirmed = confirm("Your session is about to expire. Do you want to extend your session?");
+        if (userConfirmed) {
+            extendSession()
+            window.location.href = "/webapp/admin/home";
+        } else {
+            window.location.href = "/logout";
+        }
+    }
+
+    function extendSession() {
+        fetch('/extend_session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => {
+            if (response.ok) {
+                // Reset the timers
+                setTimeout(showWarning, warningTime);
+                setTimeout(logout, logoutTime);
+            }
+        });
+    }
+
+    function logout() {
+        window.location.href = "/logout";
+    }
+
+    // Set the timers
+    setTimeout(showWarning, warningTime);
+    setTimeout(logout, logoutTime);
+</script>

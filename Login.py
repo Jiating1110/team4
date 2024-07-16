@@ -1,4 +1,6 @@
+
 import os
+
 import pathlib
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
@@ -11,6 +13,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import jwt
+import time
 from time import time
 from datetime import date,timedelta,datetime
 
@@ -18,6 +21,7 @@ import stripe
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
+
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 from flask_bcrypt import Bcrypt   #buy the blender
@@ -25,6 +29,7 @@ bcrypt = Bcrypt()   #initializing the blender
 
 from cryptography.fernet import Fernet
 from functools import wraps
+
 
 
 import re
@@ -41,6 +46,7 @@ app.config['MYSQL_DB'] = 'pythonlogin'
 #DO NOTE THAT THE MYSQL SERVER INSTANCE IN THE LAB IS RUNNING ON PORT 3360.
 #Please make necessary change to the above MYSQL_PORT config
 app.config['MYSQL_PORT'] = 3306
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=30)
 # Intialize MySQL
 mysql = MySQL(app)
 
@@ -65,7 +71,14 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
-
+#determine action based on sesion state
+@app.before_request
+def log_session():
+    if 'username' in session:
+        user_id = session.get('id')
+        username = session.get('username')
+        action = 'login' if 'loggedin' in session else 'timeout'  # Determine action based on session state
+        log_session_activity(user_id, username, action)
 def login_required(f):
     @wraps(f)
     def wrap(*args,**kwargs):
@@ -89,7 +102,24 @@ def admin_required(func):
             flash('Unauthorised Access! Only admins can access this page')
             return redirect(url_for('login'))
     return wrapper
-  
+
+def session_timeout_required(f):
+    @wraps(f)
+    def decorated_func(*args, **kwargs):
+        if 'session_time' in session:
+            print("Checking session timeout")
+            print(int(time.time()))
+            print("Session TIme:" + str(session['session_time']))
+            session_time = session['session_time']
+            if int(time.time()) - session_time > 30:
+                return redirect(url_for('logout'))
+            session['session_time'] = int(time.time())
+        else:
+            return redirect(url_for('logout'))
+        return f(*args, **kwargs)
+    return decorated_func
+
+
 def save_event(title, description, date, image_url):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)', (title, description, date, image_url))
@@ -176,6 +206,21 @@ def callback():
 
     return redirect(url_for('home'))
 
+def log_session_activity(user_id, username, action):
+    with mysql.connection.cursor() as cursor:
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('INSERT INTO session_logs (user_id, username, action, timestamp) VALUES (%s, %s, %s, %s)',
+                       (user_id, username, action, timestamp))
+        mysql.connection.commit()
+
+@app.route('/extend_session', methods=['POST'])
+def extend_session():
+    session.permanent = True
+    return '', 200
+
+
+
+
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
@@ -196,6 +241,8 @@ def login():
                 session['id'] = account['id']
                 session['username'] = account['username']
                 session['role']=account['role']
+                session['session_time'] = int(time.time())
+
 
                 last_pwd_change=account['last_pwd_change']
 
@@ -211,6 +258,7 @@ def login():
                     else:
                         flash('You successfully log in ')
                         return redirect(url_for('home'))
+
             else:
                 msg = 'Incorrect username/password!'
         else:
@@ -222,9 +270,18 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    if 'loggedin' in session:
+        user_id=session['id']
+        username=session['username']
+        role=session['role']
+        if role=='admin' or role=='super_admin':
+            log_session_activity(user_id, username, 'admin_logout')
+        else:
+            log_session_activity(user_id, username, 'customer_logout')
     session.pop('loggedin', None)
     session.pop('id', None)
     session.pop('username', None)
+    session.clear()
 
     return redirect(url_for('login'))
 
@@ -319,13 +376,16 @@ def admin_register():
     return redirect(url_for('login'))
 @app.route('/webapp/home')
 @login_required
+@session_timeout_required
 def home():
     if 'loggedin' in session:
+        print(session['session_time'])
         return render_template('home.html', username=session['username'])
     return redirect(url_for('login'))
 @app.route('/webapp/admin/home')
 @admin_required
 @login_required
+@session_timeout_required
 def admin_home():
     if 'loggedin' in session:
 
@@ -335,6 +395,7 @@ def admin_home():
 
 @app.route('/webapp/profile',methods=['GET','POST'])
 @login_required
+@session_timeout_required
 def profile():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -345,6 +406,7 @@ def profile():
 @app.route('/webapp/admin/profile',methods=['GET','POST'])
 @admin_required
 @login_required
+@session_timeout_required
 def admin_profile():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -356,6 +418,7 @@ def admin_profile():
 
 @app.route('/webapp/profile/update',methods=['GET','POST'])
 @login_required
+@session_timeout_required
 def update_profile():
     if 'loggedin' in session:
         msg=' '
@@ -546,6 +609,7 @@ def verify_password():
 
 @app.route('/webapp/profile/change_passowrd',methods=['GET','POST'])
 @login_required
+@session_timeout_required
 def change_password():
     if 'loggedin' in session:
         print('hhh')
@@ -602,6 +666,7 @@ def change_password():
 @app.route('/webapp/admin/retrieve_users')
 @admin_required
 @login_required
+@session_timeout_required
 def retrieve_users():
     if 'loggedin' in session:
         # We need all the account info for the user so we can display it on the profile page
@@ -620,6 +685,7 @@ def retrieve_users():
 @app.route('/webapp/admin/event')
 @admin_required
 @login_required
+@session_timeout_required
 def admin_event():
     if 'loggedin' in session:
         events= load_events()
@@ -628,6 +694,7 @@ def admin_event():
 @app.route('/webapp/admin/create_event', methods=['POST','GET'])
 @admin_required
 @login_required
+@session_timeout_required
 def create_event():
     if 'loggedin' in session:
         title = request.form['title']
@@ -643,6 +710,7 @@ def create_event():
 @app.route('/webapp/admin/edit_event/<int:event_id>', methods=['GET', 'POST'])
 @admin_required
 @login_required
+@session_timeout_required
 def edit_event(event_id):
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -668,6 +736,7 @@ def edit_event(event_id):
 @app.route('/webapp/admin/delete_event/<event_id>', methods=['POST','GET'])
 @admin_required
 @login_required
+@session_timeout_required
 def delete_event(event_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('DELETE FROM events WHERE id = %s', (event_id,))
@@ -677,6 +746,7 @@ def delete_event(event_id):
 
 @app.route('/webapp/events')
 @login_required
+@session_timeout_required
 def retrieve_events():
     if 'loggedin' in session:
         events = load_events()
@@ -688,6 +758,7 @@ def retrieve_events():
 @app.route('/webapp/admin/retrieve_orders')
 @admin_required
 @login_required
+@session_timeout_required
 def retrieve_orders():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
