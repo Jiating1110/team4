@@ -50,7 +50,7 @@ stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4P
 app.config['RECAPTCHA_PUBLIC_KEY'] = '6LeaSwUqAAAAAJQ-YP7y_seOSo9YvqjdPAzxEWzy'
 app.config['RECAPTCHA_PRIVATE_KEY'] = '6LeaSwUqAAAAALrtgi3HJTwYRQsrOsfbmU_LjgQF'
 
-client = vonage.Client(key="c0543f26", secret="eXo3K57UUf1AGTUB")
+client = vonage.Client(key="79be059c", secret="xpprQk8GXRftDGw2")
 sms = vonage.Sms(client)
 def login_required(f):
     @wraps(f)
@@ -159,10 +159,10 @@ def login():
                 email = decrypted_email.decode()
 
                 if account['role'] == 'admin' or account['role'] == 'super_admin':
-                    return redirect(url_for('verify_otp'))
+                    return redirect(url_for('admin_home'))
                 else:
                     flash('You successfully log in ')
-                    return redirect(url_for('verify_otp'))
+                    return redirect(url_for('home'))
 
             else:
                 msg = 'Incorrect username/password!'
@@ -192,7 +192,7 @@ def register():
         role='customer'
 
         if 'verify' == False:
-            msg = 'Please complete CAPTCHA'
+            msg = ''
         else:
             hashpwd = bcrypt.generate_password_hash(password)
             key = Fernet.generate_key()
@@ -209,7 +209,7 @@ def register():
             encrypted_email = f.encrypt(email)
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-            cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6589124852'))
+            cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6586751352'))
             mysql.connection.commit()
             msg = 'You have successfully registered!'
 
@@ -263,7 +263,7 @@ def admin_register():
                 encrypted_email = f.encrypt(email)
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6589124852'))
+                cursor.execute('INSERT INTO accounts (role, username, password, email, phone_number) VALUES (%s, %s, %s, %s, %s)', (role, username, hashpwd, encrypted_email,'6586751352'))
 
                 mysql.connection.commit()
 
@@ -280,8 +280,8 @@ def admin_register():
 @login_required
 def verify_otp():
     msg = ''
-    if 'loggedin' not in session:
-         return redirect(url_for('login'))
+    # if 'loggedin' not in session:
+    #      return redirect(url_for('login'))
     if 'verify' == False:
          print("CAPTCHA verification is required")
          return redirect(url_for('login'))
@@ -291,22 +291,22 @@ def verify_otp():
             resend_otp()
         if request.form['confirm_otp']:
             confirm_otp()
-    session['otp_verified'] = False
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-
-    if account:
-         phone_number = account['phone_number']
-         otp = verification_code(phone_number)
-         if otp:
-             session['phone_number'] = phone_number
-             session['otp'] = otp
-         else:
-           print('Error in sending OTP')
-    else:
-         print('Error in finding phone_number')
+    # session['otp_verified'] = False
+    # username = session['username']
+    # cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    # cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+    # account = cursor.fetchone()
+    #
+    # if account:
+    #      phone_number = account['phone_number']
+    #      otp = verification_code(phone_number)
+    #      if otp:
+    #          session['phone_number'] = phone_number
+    #          session['otp'] = otp
+    #      else:
+    #        print('Error in sending OTP')
+    # else:
+    #      print('Error in finding phone_number')
     return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/confirm_otp', methods=['GET','POST'])
