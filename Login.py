@@ -45,6 +45,8 @@ mysql = MySQL(app)
 # )
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
+app.config['RECAPTCHA_PUBLIC_KEY'] = '6LeaSwUqAAAAAJQ-YP7y_seOSo9YvqjdPAzxEWzy'
+app.config['RECAPTCHA_PRIVATE_KEY'] = '6LeaSwUqAAAAALrtgi3HJTwYRQsrOsfbmU_LjgQF'
 
 def login_required(f):
     @wraps(f)

@@ -1,5 +1,6 @@
 from wtforms import Form,StringField,PasswordField,validators
 from wtforms.validators import DataRequired,ValidationError
+from flask_wtf import RecaptchaField
 
 class RegisterForm(Form):
     username=StringField('Username',[validators.DataRequired()])
@@ -17,3 +18,4 @@ class UpdateProfileForm(Form):
 class ChangePassword(Form):
     newpwd=PasswordField('New Password',[validators.DataRequired()])
     confirmpwd=PasswordField('Confirm Password',[validators.DataRequired()])
+    recaptcha = RecaptchaField()

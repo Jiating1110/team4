@@ -6,6 +6,7 @@
 <div class="container">
     <h2>Event Registration Payment Form</h2>
     <form id="payment-form" method="POST" action="{{ url_for('register_event') }}">
+        {{ form.csrf_token }}
         <div class="form-group">
             <label for="name">Name</label>
             <input type="text" id="name" name="name" required>
@@ -31,6 +32,13 @@
                 <div id="card-element"></div>
             </div>
         </div>
+        {{ form.recaptcha }}
+        {% for error in form.recaptcha.errors %}
+        <ul>
+            <li style="color:red;">{{ error }}</li>
+        {% endfor %}
+        </ul>
+        <div class="msg">{{ msg }}</div>
         <button class="btn" type="submit">Submit Payment</button>
 
     </form>
