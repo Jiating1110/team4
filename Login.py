@@ -19,7 +19,7 @@ from datetime import date,timedelta,datetime
 
 import stripe
 
-from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
+from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword,OTPVerifyForm, EventForm
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
 
 from flask_mysqldb import MySQL
@@ -29,6 +29,10 @@ bcrypt = Bcrypt()   #initializing the blender
 
 from cryptography.fernet import Fernet
 from functools import wraps
+
+import random
+import vonage
+
 
 
 
@@ -70,6 +74,12 @@ mail = Mail(app)
 
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
+
+app.config['RECAPTCHA_PUBLIC_KEY'] = '6LeaSwUqAAAAAJQ-YP7y_seOSo9YvqjdPAzxEWzy'
+app.config['RECAPTCHA_PRIVATE_KEY'] = '6LeaSwUqAAAAALrtgi3HJTwYRQsrOsfbmU_LjgQF'
+
+client = vonage.Client(key="79be059c", secret="xpprQk8GXRftDGw2")
+sms = vonage.Sms(client)
 
 #determine action based on sesion state
 @app.before_request
@@ -218,9 +228,111 @@ def extend_session():
     session.permanent = True
     return '', 200
 
+def generate_otp():
+    otp = ''
+    for i in range(6):
+         otp += str(random.randint(0,9))
+    return otp
 
+def verification_code(phone_number):
+    if 'loggedin' in session:
+        username = session['username']
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+        account = cursor.fetchone()
 
+        if account:
+            otp = generate_otp()
+            print(otp)
+            responseData = sms.send_message(
+                {
+                    "from": "Vonage APIs",
+                    "to": phone_number,
+                    "text": f'OTP verification code: {otp} ',
+                }
+            )
+            if responseData["messages"][0]["status"] == "0":
+                 print("Message sent successfully.")
+                 return otp
+            else:
+                 print(f"Message failed with error: {responseData['messages'][0]['error-text']}")
+                 return None
+        else:
+            print('Error in finding phone_number')
+            return None
 
+@app.route('/verify_otp', methods=['GET','POST'])
+@login_required
+def verify_otp():
+    msg = ''
+    if 'loggedin' not in session:
+          return redirect(url_for('login'))
+    if 'verify' == False:
+         print("CAPTCHA verification is required")
+         return redirect(url_for('login'))
+    otp_form = OTPVerifyForm(request.form)
+    if request.method == 'POST':
+        if request.form['resend_otp']:
+            resend_otp()
+        if request.form['confirm_otp']:
+            confirm_otp()
+    session['otp_verified'] = False
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+
+    if account:
+          phone_number = account['phone_number']
+          otp = verification_code(phone_number)
+          if otp:
+              session['phone_number'] = phone_number
+              session['otp'] = otp
+          else:
+            print('Error in sending OTP')
+    else:
+          print('Error in finding phone_number')
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/confirm_otp', methods=['GET','POST'])
+@login_required
+def confirm_otp():
+    otp_form = OTPVerifyForm(request.form)
+    entered_otp = request.form['otp']
+    print(session['otp'])
+    if entered_otp == session['otp']:
+        if entered_otp == session['otp']:
+            session['otp_verified'] = True
+            if session['role'] == 'admin' or session['role'] == 'super_admin':
+                msg = 'Success!'
+                return redirect(url_for('admin_home', msg=msg))
+            else:
+                msg = 'You have successfully logged in '
+                return redirect(url_for('home', msg=msg))
+        else:
+            msg = 'Incorrect. Please try again'
+    else:
+        msg = 'Incorrect. Please try again'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/resend_otp', methods=['GET','POST'])
+@login_required
+def resend_otp():
+    otp_form = OTPVerifyForm(request.form)
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        phone_number = account['phone_number']
+        otp = verification_code(phone_number)
+        if otp:
+            session['phone_number'] = phone_number
+            session['otp'] = otp
+            msg = 'OTP has been resent. Please try again'
+        else:
+            msg = 'Error in sending OTP'
+    else:
+        msg= 'Error in finding phone_number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
@@ -297,28 +409,31 @@ def register():
         pwd_type='user'
         google_id='Null'
         last_pwd_change=date.today()
-        hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
+        if 'verify' == False:
+            msg = ''
+        else:
+            hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
-        account=cursor.fetchone()
-        if account:
-            if account['username']==username:
-                flash('Username has been taken. Please choose a different username')
-                return render_template('register.html', msg=msg, form=register_form)
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
+            account=cursor.fetchone()
+            if account:
+                if account['username']==username:
+                    flash('Username has been taken. Please choose a different username')
+                    return render_template('register.html', msg=msg, form=register_form)
 
-        user_file = f"{username}_pwd"
-        try:
-            file=open(user_file,'w')
-            file.write("{}\n".format(hashpwd))
-            print(f"Hashed password successfully written to {user_file}")
-        except Exception as e:
-            print(f"Error writing hashed password to file: {e}")
+            user_file = f"{username}_pwd"
+            try:
+                file=open(user_file,'w')
+                file.write("{}\n".format(hashpwd))
+                print(f"Hashed password successfully written to {user_file}")
+            except Exception as e:
+                print(f"Error writing hashed password to file: {e}")
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
-        mysql.connection.commit()
-        msg = 'You have successfully registered!'
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,'6586751352'))
+            mysql.connection.commit()
+            msg = 'You have successfully registered!'
 
     return render_template('register.html', msg=msg,form=register_form)
 @app.route('/webapp/admin/register', methods=['GET', 'POST'])
@@ -327,15 +442,19 @@ def register():
 def admin_register():
     if 'loggedin' in session:
         if not super_admin() == True:
-            return 'Unauthorised Access! Only super admins can create admin accounts'
-
+            flash('Unauthorised Access! Only super admins can create admin accounts')
+            return redirect(url_for('admin_home'))
+            # Output message if something goes wrong...
         msg = ''
         register_form = RegisterForm(request.form)
-        if request.method == 'POST' and register_form.validate():
+        # Check if "username", "password" and "email" POST requests exist (user submitted form)
+        if request.method == 'POST' and 'username' in request.form and 'password' in request.form and 'email' in request.form:
+            # Create variables for easy access
+            role = 'admin'
             username = register_form.username.data
             password = register_form.password.data
             email = register_form.email.data
-            role = 'customer'
+            # role = 'customer'
             pwd_type = 'user'
             google_id = 'Null'
             last_pwd_change = date.today()
@@ -363,11 +482,11 @@ def admin_register():
                     print(f"Error writing hashed password to file: {e}")
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
+                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,'6586751352'))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
-                return render_template('admin_home.html', msg=msg,username=session['username'])
+                return render_template('admin_home.html', msg=msg,username=session['username'], form=register_form)
         elif request.method == 'POST': #verify if theres an input
             # Form is empty... (no POST data)
             msg = 'Please fill out the form!'
@@ -674,8 +793,33 @@ def retrieve_users():
         cursor.execute('SELECT COUNT(*) AS users_count FROM accounts')
         count = cursor.fetchone()
         users_count = count['users_count']
-        cursor.execute('SELECT * FROM accounts')
+        cursor.execute('SELECT username, role, email, phone_number FROM accounts')
         users_info = cursor.fetchall()
+
+        for user in users_info:
+            encrypted_email = user['email'].encode()
+            username = user['username']
+            key_file_name = f"{username}_symmetric.key"
+
+            if not os.path.exists(key_file_name):
+                return f"Symmetric key file not found for user {username}."
+
+            with open(key_file_name, 'rb') as key_file:
+                key = key_file.read()
+
+            f = Fernet(key)
+            decrypted_email = f.decrypt(encrypted_email)
+            email = decrypted_email.decode()
+
+            email_parts = email.split('@')
+            masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
+
+            user['email'] = masked_email
+
+            phone_number = user['phone_number']
+            masked_phone_no = f"{phone_number[2]}******{phone_number[-2:]}"
+
+            user['phone_number'] = masked_phone_no
 
         # Show the profile page with account info
         return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)
@@ -772,6 +916,7 @@ def retrieve_orders():
 @login_required
 def register_event():
     if 'loggedin' in session:
+        event_form = EventForm(request.form)
         if request.method == 'POST' and 'name' in request.form and 'email' in request.form and 'event' in request.form and 'payment_method' in request.form:
             name = request.form['name']
             email = request.form['email']
@@ -805,12 +950,12 @@ def register_event():
                         (cust_id, name, email, event, payment_method, card_last4))
                     mysql.connection.commit()
 
-                    return render_template('event_register_successfully.html')
+                    return render_template('event_register_successfully.html', form=event_form)
 
                 except stripe.error.StripeError as e:
                     return str(e), 400
 
-        return render_template('event_register.html')
+        return render_template('event_register.html', form=event_form)
     return redirect(url_for('login'))
 
 @app.route('/delete/<int:order_id>', methods=['POST'])
