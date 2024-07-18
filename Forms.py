@@ -1,7 +1,6 @@
 from wtforms import Form,StringField,PasswordField,validators
 from wtforms.validators import DataRequired,ValidationError
 import re
-from flask_wtf import RecaptchaField
 
 def pwd_dic_check(form,field):
     file=open("wordlist.txt","r")
@@ -22,9 +21,9 @@ def pwd_check(form,field):
                               'at least one special characters')
 class RegisterForm(Form):
     username=StringField('Username',[validators.DataRequired()])
-    password=PasswordField('Password',[validators.DataRequired(),pwd_dic_check,pwd_check])
+    password=PasswordField('Password',[validators.DataRequired(),pwd_dic_check])
     email=StringField('Email',[validators.Email(message='Invalid Email format'),validators.DataRequired(message='Email address is required.')])
-    recaptcha = RecaptchaField()
+
 class LoginForm(Form):
     username=StringField('Username',[validators.DataRequired()])
     password=PasswordField('Password',[validators.DataRequired()])
@@ -42,9 +41,4 @@ class VerifyEmail(Form):
 
 class ChangePassword(Form):
     newpwd=PasswordField('New Password',[validators.DataRequired()])
-    confirmpwd=PasswordField('Confirm Password',[validators.DataRequired(),pwd_dic_check,pwd_check])
-    recaptcha = RecaptchaField()
-class OTPVerifyForm(Form):
-    otp = StringField('OTP Code', [validators.Length(min=6, max=6, message='OTP code must be 6 characters long'), validators.DataRequired(message='OTP code is required'), validators.Regexp('^[0-9]*$', message='OTP code must only contain numbers')])
-class EventForm(Form):
-    recaptcha = RecaptchaField()
+    confirmpwd=PasswordField('Confirm Password',[validators.DataRequired(),pwd_dic_check])
