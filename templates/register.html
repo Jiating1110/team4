@@ -69,22 +69,9 @@
 				{% endif %}
 			</div>
 			<div class="msg">{{ msg }}</div>
-			<div class="container">
-					{% include 'captcha.html' %}
-            </div>
-			<div class="msg">{{ msg }}</div>
-				<input type="submit" value="Register">
-			</form>
-			<script>
-				function verify(){
-					if (!updatePuzzlePiecePos()) {
-						document.querySelector('.msg').textContent = "Please complete CAPTCHA";
-						return false;
-					} else{
-						return true;
-					}
-				}
-			</script>
-		</div>
+			<input type="submit" value="Register">
+		</form>
 	</div>
+</div>
 </body>
+</html>

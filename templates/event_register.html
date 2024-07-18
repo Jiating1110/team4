@@ -32,12 +32,6 @@
                 <div id="card-element"></div>
             </div>
         </div>
-        {{ form.recaptcha }}
-        {% for error in form.recaptcha.errors %}
-        <ul>
-            <li style="color:red;">{{ error }}</li>
-        {% endfor %}
-        </ul>
         <div class="msg">{{ msg }}</div>
         <button class="btn" type="submit">Submit Payment</button>
 
