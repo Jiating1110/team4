@@ -1,4 +1,3 @@
-
 import os
 
 import pathlib
@@ -14,7 +13,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import jwt
 import time
-from time import time
 from datetime import date,timedelta,datetime
 
 import stripe
@@ -197,12 +195,16 @@ def callback():
         session['loggedin'] = True
         session['id'] = cursor.lastrowid
         session['username'] = session['name']
+        session['role'] = 'customer'
+        session['session_time'] = int(time.time())
     else:
         #if database have account
 
         session['loggedin']=True
         session['id']=account['id']
         session['username']=account['username']
+        session['role'] = 'customer'
+        session['session_time'] = int(time.time())
 
     return redirect(url_for('home'))
 
@@ -335,7 +337,7 @@ def admin_register():
             username = register_form.username.data
             password = register_form.password.data
             email = register_form.email.data
-            role = 'customer'
+            role = 'admin'
             pwd_type = 'user'
             google_id = 'Null'
             last_pwd_change = date.today()
