@@ -313,4 +313,7 @@ body.loggedin {
 #enterOTP {
     text-align:center;
 }
+strong {
+    font-weight: bold;
+}
 

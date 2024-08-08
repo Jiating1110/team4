@@ -18,7 +18,9 @@ from datetime import date,timedelta,datetime
 import stripe
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
-from flask import Flask, render_template, request, redirect, url_for, session,flash,abort
+from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -68,6 +70,8 @@ mail = Mail(app)
 
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
+
+limiter=Limiter(app=app,key_func=get_remote_address)
 
 #determine action based on sesion state
 @app.before_request
@@ -222,11 +226,31 @@ def extend_session():
 
 
 
-
+# In-memory storage for failed attempts; use a database or other storage in production
+failed_attempts = {}
+MAX_ATTEMPTS = 2
+BLOCK_TIME = 30
+        # 15 * 60)  # 15 minutes
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
     login_form=LoginForm(request.form)
+
+    user_ip = request.remote_addr
+
+    # Check if the user is blocked
+    if user_ip in failed_attempts:
+        attempts, last_attempt = failed_attempts[user_ip]
+        if attempts >= MAX_ATTEMPTS:
+            if time.time() - last_attempt < BLOCK_TIME:
+                flash('Too many failed attempts.Please try again after 15 minutes')
+                # return url_for('login')
+                return render_template('login.html', msg=msg,form=login_form)
+
+            else:
+                # Reset attempts after block time
+                failed_attempts[user_ip] = (0, time.time())
+
     if request.method == 'POST' and login_form.validate():
         username=login_form.username.data
         password=login_form.password.data
@@ -265,6 +289,11 @@ def login():
                 msg = 'Incorrect username/password!'
         else:
             msg = 'Incorrect username/password!'
+         # Increment failed attempts
+        if user_ip not in failed_attempts:
+            failed_attempts[user_ip] = (0, time.time())
+        attempts, last_attempt = failed_attempts[user_ip]
+        failed_attempts[user_ip] = (attempts + 1, last_attempt)
 
     return render_template('login.html', msg=msg,form=login_form)
 
@@ -465,10 +494,10 @@ def get_reset_token(user,expires=200):
         username=account['username']
         if not account:
             return None
-        token=jwt.encode({'reset_password':username,'exp':time()+expires},key=app.secret_key,algorithm='HS256')
+        token=jwt.encode({'reset_password':username,'exp':time.time()+expires},key=app.secret_key,algorithm='HS256')
         return token
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Errorbbbb: {e}")
         return None
 def verify_reset_token(token):
     try:
@@ -484,6 +513,7 @@ def verify_reset_token(token):
 
         return account
     except jwt.ExpiredSignatureError:
+        print('token has been expired')
         return None  # Token has expired
     except jwt.InvalidTokenError:
         return None  # Invalid token
@@ -514,11 +544,10 @@ def send_mail(user):
 @app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     user=verify_reset_token(token)
-    print(user['pwd_type'])
-    print('token',user)
     if user is None:
-        flash('The reset link is invalid or has expired.', 'warning')
-        return redirect(url_for('reset_password_request'))
+        print('reset link is invalid')
+        flash('The reset link has expired. Please request a new password reset link.', 'danger')
+        return redirect(url_for('reset_request'))
     pwd_form=ChangePassword(request.form)
     email=user['email']
     if request.method == 'POST' and pwd_form.validate():
@@ -563,7 +592,6 @@ def reset_request():
     verify_form=VerifyEmail(request.form)
     if request.method=='POST' and verify_form.validate():
         email=verify_form.email.data
-
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE email = %s', (email,))
         account = cursor.fetchone()
