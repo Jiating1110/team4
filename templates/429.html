@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rate Limit Exceed</title>
+
+
+</head>
+<body>
+    <h1>429 - Rate Limite Exceed</h1>
+    <p>Sorry, the page you are looking for does not exist.</p>
+    {% if session['role'] == 'admin' or session['role'] == 'super_admin' %}
+        <a href="{{ url_for('admin_home') }}">Go back to the admin homepage</a>
+    {% else %}
+        <a href="{{ url_for('home') }}">Go back to the homepage</a>
+    {% endif %}
+</body>
+</html>

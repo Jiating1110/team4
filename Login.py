@@ -20,7 +20,7 @@ import stripe
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify
 from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+# from flask_limiter.util import get_remote_address
 
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -71,8 +71,15 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
-limiter=Limiter(app=app,key_func=get_remote_address)
+def get_session_username():
+    # Default to 'anonymous' if the user is not logged in
+    return session.get('username', 'anonymous')
+limiter=Limiter(app=app,key_func=get_session_username)
 
+@app.errorhandler(429)
+def rate_limit_error(e):
+    # Render the custom 404 error page
+    return render_template('429.html'), 429
 #determine action based on sesion state
 @app.before_request
 def log_session():
@@ -224,13 +231,34 @@ def extend_session():
     session.permanent = True
     return '', 200
 
+def get_failed_attempts(ip_addr):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+    ip_addr=cursor.fetchone()
+    return ip_addr
 
+def increment_failed_attempts(ip_addr):
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+    record=cursor.fetchone()
 
-# In-memory storage for failed attempts; use a database or other storage in production
+    attempt_time = datetime.now()
+    if record:
+        attempts=record['attempts']+1
+        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s,attempts=%s WHERE ip_addr = %s', (attempt_time,attempts,ip_addr))
+    else:
+        attempts=1
+        cursor.execute('INSERT INTO failed_login_attempts VALUES(NULL,%s,%s,%s)',(ip_addr,attempt_time,attempts,))
+    mysql.connection.commit()
+def reset_failed_attempts(ip_addr):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+    mysql.connection.commit()
+
 failed_attempts = {}
 MAX_ATTEMPTS = 2
 BLOCK_TIME = 30
-        # 15 * 60)  # 15 minutes
+
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
@@ -239,17 +267,17 @@ def login():
     user_ip = request.remote_addr
 
     # Check if the user is blocked
-    if user_ip in failed_attempts:
-        attempts, last_attempt = failed_attempts[user_ip]
+    record=get_failed_attempts(user_ip)
+    if record:
+        attempts=record['attempts']
+        last_attempt=record['attempt_time']
         if attempts >= MAX_ATTEMPTS:
-            if time.time() - last_attempt < BLOCK_TIME:
+            if time.time() - last_attempt.timestamp() < BLOCK_TIME:
                 flash('Too many failed attempts.Please try again after 15 minutes')
-                # return url_for('login')
                 return render_template('login.html', msg=msg,form=login_form)
-
             else:
-                # Reset attempts after block time
-                failed_attempts[user_ip] = (0, time.time())
+                reset_failed_attempts(user_ip)
+
 
     if request.method == 'POST' and login_form.validate():
         username=login_form.username.data
@@ -269,10 +297,7 @@ def login():
                 session['role']=account['role']
                 session['session_time'] = int(time.time())
 
-
                 last_pwd_change=account['last_pwd_change']
-
-
                 date_difference=date.today()-last_pwd_change
                 print('login check date difference',date_difference)
                 if date_difference >= timedelta(days=3):
@@ -289,13 +314,11 @@ def login():
                 msg = 'Incorrect username/password!'
         else:
             msg = 'Incorrect username/password!'
-         # Increment failed attempts
-        if user_ip not in failed_attempts:
-            failed_attempts[user_ip] = (0, time.time())
-        attempts, last_attempt = failed_attempts[user_ip]
-        failed_attempts[user_ip] = (attempts + 1, last_attempt)
+        # Increment failed attempts
+        increment_failed_attempts(user_ip)
 
     return render_template('login.html', msg=msg,form=login_form)
+
 
 
 @app.route('/logout')
@@ -405,6 +428,7 @@ def admin_register():
             # Show registration form with message (if any)
         return render_template('admin_register.html', msg=msg,form=register_form)
     return redirect(url_for('login'))
+
 @app.route('/webapp/home')
 @login_required
 @session_timeout_required
@@ -607,6 +631,7 @@ def reset_request():
 
 @app.route('/webapp/verify_type',methods=['GET','POST'])
 @login_required
+@limiter.limit('2 per day')
 def verify_type():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -640,6 +665,7 @@ def verify_password():
 @app.route('/webapp/profile/change_passowrd',methods=['GET','POST'])
 @login_required
 @session_timeout_required
+@limiter.limit('2 per day')
 def change_password():
     if 'loggedin' in session:
         print('hhh')
