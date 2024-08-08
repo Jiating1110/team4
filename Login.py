@@ -465,7 +465,7 @@ def get_reset_token(user,expires=200):
         username=account['username']
         if not account:
             return None
-        token=jwt.encode({'reset_password':username,'exp':time()+expires},key=app.secret_key,algorithm='HS256')
+        token=jwt.encode({'reset_password':username,'exp':time.time()+expires},key=app.secret_key,algorithm='HS256')
         return token
     except Exception as e:
         print(f"Error: {e}")
