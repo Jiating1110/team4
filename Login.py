@@ -318,12 +318,8 @@ def register():
             print(f"Error writing hashed password to file: {e}")
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        #cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
-        cursor.execute(
-            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-            (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id)
-        )
-
+        cursor.execute('INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)', (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id))
+        # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
         mysql.connection.commit()
         msg = 'You have successfully registered!'
 
