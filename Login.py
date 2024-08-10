@@ -231,53 +231,59 @@ def extend_session():
     session.permanent = True
     return '', 200
 
-def get_failed_attempts(ip_addr):
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
-    ip_addr=cursor.fetchone()
-    return ip_addr
-
-def increment_failed_attempts(ip_addr):
-    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
-    record=cursor.fetchone()
-
-    attempt_time = datetime.now()
-    if record:
-        attempts=record['attempts']+1
-        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s,attempts=%s WHERE ip_addr = %s', (attempt_time,attempts,ip_addr))
-    else:
-        attempts=1
-        cursor.execute('INSERT INTO failed_login_attempts VALUES(NULL,%s,%s,%s)',(ip_addr,attempt_time,attempts,))
-    mysql.connection.commit()
+# def get_failed_attempts(ip_addr):
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+#     record=cursor.fetchone()
+#     cursor.close()
+#     return record
+#
+# def increment_failed_attempts(ip_addr):
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+#     record = cursor.fetchone()
+#     attempt_time = datetime.now()
+#
+#     if record:
+#         attempts = record['attempts'] + 1
+#         block_time = record['block_time']
+#         block_num = record['block_num']
+#
+#         # Update block time based on the number of failed attempts
+#         if attempts > MAX_ATTEMPTS:
+#             block_num += 1
+#             block_time = 30 * block_num  # Increase block time by 30 seconds for each additional failure
+#         else:
+#             block_time = 30  # Reset to 30 seconds if below max attempts
+#
+#         cursor.execute(
+#             'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
+#             (attempt_time, attempts, block_time, block_num, ip_addr)
+#         )
+#     else:
+#         attempts = 1
+#         block_time = 30
+#         block_num = 1
+#         cursor.execute(
+#             'INSERT INTO failed_login_attempts (ip_addr, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s)',
+#             (ip_addr, attempt_time, attempts, block_time, block_num)
+#         )
+#
+#     mysql.connection.commit()
+#     cursor.close()
 def reset_failed_attempts(ip_addr):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
     mysql.connection.commit()
+    cursor.close()
 
-failed_attempts = {}
-MAX_ATTEMPTS = 2
-BLOCK_TIME = 30
+
+MAX_ATTEMPTS = 3
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
     login_form=LoginForm(request.form)
-
-    user_ip = request.remote_addr
-
-    # Check if the user is blocked
-    record=get_failed_attempts(user_ip)
-    if record:
-        attempts=record['attempts']
-        last_attempt=record['attempt_time']
-        if attempts >= MAX_ATTEMPTS:
-            if time.time() - last_attempt.timestamp() < BLOCK_TIME:
-                flash('Too many failed attempts.Please try again after 15 minutes')
-                return render_template('login.html', msg=msg,form=login_form)
-            else:
-                reset_failed_attempts(user_ip)
-
 
     if request.method == 'POST' and login_form.validate():
         username=login_form.username.data
@@ -285,9 +291,36 @@ def login():
         print(password)
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        user_ip = request.remote_addr
+        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+        record = cursor.fetchone()
+        if record:
+            print('got record')
+            attempts = record['attempts']
+            block_time = record['block_time']
+            block_num = record['block_num']
+            last_attempt = record['attempt_time']
+            time_elapsed = (datetime.now() - last_attempt).total_seconds()
+
+            # Check if the IP is currently blocked
+            if attempts > MAX_ATTEMPTS:
+                if time_elapsed < block_time:
+                    remaining_time = block_time - time_elapsed
+                    flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                    cursor.close()
+                    return render_template('login.html', msg=msg, form=login_form)
+                else:
+
+                    attempts=0
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
+                        (attempts, block_time, block_num, user_ip))
+
         cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
         # Fetch one record and return result
         account = cursor.fetchone() #if account dont exist in db, return 0
+
         if account:
             user_hashpwd = account['password']
             if account and bcrypt.check_password_hash(user_hashpwd, password):
@@ -305,17 +338,58 @@ def login():
                     return redirect(url_for('change_password'))
                 else:
                     if account['role']=='admin' or account['role']=='super_admin':
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+                        mysql.connection.commit()
                         return redirect(url_for('admin_home'))
                     else:
                         flash('You successfully log in ')
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+                        mysql.connection.commit()
                         return redirect(url_for('home'))
-
             else:
                 msg = 'Incorrect username/password!'
+                print('fail')
+
+                attempt_time = datetime.now()
+                if record:
+                    attempts = record['attempts'] + 1
+                    block_time = record['block_time']
+                    block_num = record['block_num']
+                    # if block_num > 1:
+                    #     block_time = 30 * block_num
+                    if attempts>MAX_ATTEMPTS:
+                        attempts=0
+                        block_num=record['block_num']+1
+                        if block_num>1:
+                            block_time=record['block_time']*2
+                        else:
+                            block_time = record['block_time']
+                        last_attempt=record['attempt_time']
+                        time_elapsed = (datetime.now() - last_attempt).total_seconds()
+                        cursor.execute(
+                            'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
+                            (attempt_time, attempts, block_time, block_num, user_ip))
+                        if time_elapsed < block_time:
+                            print('block time:',block_time)
+                            remaining_time = block_time - time_elapsed
+                            flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                            return render_template('login.html', msg=msg, form=login_form)
+
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
+                        (attempt_time, attempts, block_time, block_num, user_ip))
+                else:
+                    block_time = 30
+                    block_num = 0
+                    attempts = 1
+                    cursor.execute(
+                        'INSERT INTO failed_login_attempts (ip_addr, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s)',
+                        (user_ip, attempt_time, attempts, block_time, block_num))
+                mysql.connection.commit()
+                cursor.close()
+
         else:
             msg = 'Incorrect username/password!'
-        # Increment failed attempts
-        increment_failed_attempts(user_ip)
 
     return render_template('login.html', msg=msg,form=login_form)
 
@@ -370,7 +444,9 @@ def register():
             print(f"Error writing hashed password to file: {e}")
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
+        cursor.execute(
+            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+            (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id))
         mysql.connection.commit()
         msg = 'You have successfully registered!'
 
