@@ -254,46 +254,6 @@ def extend_session():
     session.permanent = True
     return '', 200
 
-# def get_failed_attempts(ip_addr):
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
-#     record=cursor.fetchone()
-#     cursor.close()
-#     return record
-#
-# def increment_failed_attempts(ip_addr):
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
-#     record = cursor.fetchone()
-#     attempt_time = datetime.now()
-#
-#     if record:
-#         attempts = record['attempts'] + 1
-#         block_time = record['block_time']
-#         block_num = record['block_num']
-#
-#         # Update block time based on the number of failed attempts
-#         if attempts > MAX_ATTEMPTS:
-#             block_num += 1
-#             block_time = 30 * block_num  # Increase block time by 30 seconds for each additional failure
-#         else:
-#             block_time = 30  # Reset to 30 seconds if below max attempts
-#
-#         cursor.execute(
-#             'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
-#             (attempt_time, attempts, block_time, block_num, ip_addr)
-#         )
-#     else:
-#         attempts = 1
-#         block_time = 30
-#         block_num = 1
-#         cursor.execute(
-#             'INSERT INTO failed_login_attempts (ip_addr, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s)',
-#             (ip_addr, attempt_time, attempts, block_time, block_num)
-#         )
-#
-#     mysql.connection.commit()
-#     cursor.close()
 def reset_failed_attempts(ip_addr):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
@@ -310,13 +270,11 @@ def login():
 
     login_form=LoginForm(request.form)
 
-
     if request.method == 'POST' and login_form.validate():
         username = login_form.username.data
         password = login_form.password.data
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
 
         user_ip = request.remote_addr
 
@@ -499,25 +457,24 @@ def register():
                         flash('Username has been taken. Please choose a different username')
                         return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
                 user_file = f"{username}_pwd"
-                  try:
-                      file=open(user_file,'w')
-                      file.write("{}\n".format(hashpwd))
-                      print(f"Hashed password successfully written to {user_file}")
-                  except Exception as e:
-                      print(f"Error writing hashed password to file: {e}")
+                try:
+                    file = open(user_file, 'w')
+                    file.write("{}\n".format(hashpwd))
+                    print(f"Hashed password successfully written to {user_file}")
+                except Exception as e:
+                    print(f"Error writing hashed password to file: {e}")
 
                 # Insert user into database
                 cursor.execute(
-                    'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id, is_verified, verification_token) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
-                    (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id, True, None))
-                mysql.connection.commit()
+                'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id, is_verified, verification_token) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id, True, None))
+            mysql.connection.commit()
 
-                msg = 'You have successfully registered!'
-            else:
-                flash('Please verify your OTP before registering.')
-                return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
-
+            msg = 'You have successfully registered!'
+        else:
+            flash('Please verify your OTP before registering.')
     return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+
 
 
 
