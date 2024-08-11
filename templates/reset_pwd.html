@@ -5,7 +5,8 @@
 
 
 <div>
-    <p>A verification email has been sent to this email address {{ email }}
+
+    <p>A verification email has been sent to this email address <strong>{{ email }}</strong>
     Please Verify it</p>
     <form action="{{url_for('login')}}" method="POST">
             <input type="submit" value="OK">

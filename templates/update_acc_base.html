@@ -12,6 +12,11 @@
 		<nav class="navtop">
 			<div>
 				<h1>Website Title</h1>
+				{%if session['role']=='admin' or session['role']=='super_admin'%}
+					<a href="{{ url_for('admin_home') }}"><i class="fas fa-home"></i>Home</a>
+				{% else %}
+					<a href="{{ url_for('home') }}"><i class="fas fa-home"></i>Home</a>
+				{% endif %}
 
 			</div>
 		</nav>
