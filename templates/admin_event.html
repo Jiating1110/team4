@@ -3,8 +3,13 @@
 {% block content %}
 <h2>Event Page</h2>
 <h2>Create Event</h2>
+<style>
+    .hidden {
+        display: none;
+    }
+</style>
 <div class="event-container">
-    <form class="event-form" method="POST" action="{{ url_for('create_event') }}">
+    <form class="event-form" method="POST" action="{{ url_for('create_event') }}" enctype="multipart/form-data">
         <label for="event-name">Event Title</label>
         <input type="text" id="event-name" name="title" required>
 
@@ -14,11 +19,41 @@
         <label for="event-description">Event Description</label>
         <textarea id="event-description" name="description" required></textarea>
 
-        <label for="event-url">Image URL</label>
-        <input type="url" id="event-url" name="image_url" required>
+        <label for="selection">Choose option:</label>
+        <select name="selection" id="selection">
+            <option value="" disabled selected>Select an option</option>
+            <option value="url">Image URL</option>
+            <option value="file">Upload Image File</option>
+        </select>
+
+         <div id="eventURL" class="hidden">
+            <label for="event-url">Image URL</label>
+            <input type="url" id="event-url" name="image_url">
+        </div>
+        <div id="imgFile" class="hidden">
+            <input type="file" id="file" name="file"  accept="image/*">
+        </div>
+
+        <div id="message"></div>
 
         <button type="submit">Create Event</button>
+         <div class="msg">{{ msg }}</div>
     </form>
+    <div class="error_msg">
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                        <div  class="alert alert-warning alert-dismissable " role="alert">
+                            <span>{{message}}</span>
+                        <button type="button" class="close" data-bs-dismiss="alert" aria-label ="close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+    </div>
 </div>
 
 <h2>Existing Events</h2>
@@ -32,4 +67,42 @@
     </li>
     {% endfor %}
 </ul>
+<script>
+        document.getElementById('selection').addEventListener('change', function() {
+            var eventURL = document.getElementById('eventURL');
+            var imgFile = document.getElementById('imgFile');
+            var selection = this.value;
+
+            if (selection === 'url') {
+                eventURL.classList.remove('hidden');
+                imgFile.classList.add('hidden');
+            } else if (selection === 'file') {
+                imgFile.classList.remove('hidden');
+                eventURL.classList.add('hidden');
+            } else {
+                eventURL.classList.add('hidden');
+                imgFile.classList.add('hidden');
+            }
+        });
+
+        document.getElementById('event-form').addEventListener('submit', function(event) {
+            var eventURL = document.getElementById('eventURL');
+            var imgFile = document.getElementById('imgFile');
+            var url = document.getElementById('event-url').value;
+            var inputFile = document.getElementById('file').files.length;
+            var selection = document.getElementById('selection').value;
+            var msg = document.getElementById('message');
+            msg.textContent = '';
+            if (selection === 'url' && !url) {
+                msg.textContent = 'Image URL is required';
+                event.preventDefault();
+            } else if (selection === 'file' && inputFile === 0) {
+                msg.textContent = 'Image file is required';
+                event.preventDefault();
+            } else if (!selection) {
+                msg.textContent = 'Either Image URL or file must be provided';
+                event.preventDefault();
+            }
+        });
+</script>
 {% endblock %}

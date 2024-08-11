@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <meta charset="utf-8">
+    <title>OTP Verification</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+        <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.1/css/all.css">
+    </head>
+    <body>
+    <div class="verify_otp">
+        <h1>OTP Verification</h1>
+        <p id="enterOTP">Enter OTP sent to ****852. <br> It will expire after 30 seconds</p>
+        <form action="{{ url_for('verify_phone_otp') }}" method="post">
+            <div class="form-group">
+                <div class="input-icon">
+                    <i class="fas fa-key"></i>
+                    {{form.otp (placeholder="OTP Code", class="input-box")}}
+                </div>
+            </div>
+            <p id="resendOTP">Didn't receive an OTP? <a href="/resend_otp" id="resend_otp"> Resend OTP</a></p>
+            <div class="msg">
+                {{ msg }}
+            </div>
+            <input type="submit" formaction="/confirm_phone_otp" name="submit" value="Verify" id="confirm_otp">
+        </form>
+    </div>
+    </body>
+</html>
