@@ -405,15 +405,15 @@ def login():
                     if account['role']=='admin' or account['role']=='super_admin':
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        return redirect(url_for('admin_home'))
-                        # return redirect(url_for('verify_phone_otp'))
+                        # return redirect(url_for('admin_home'))
+                        return redirect(url_for('verify_phone_otp'))
 
                     else:
                         flash('You successfully log in ')
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        return redirect(url_for('home'))
-                        # return redirect(url_for('verify_phone_otp'))
+                        # return redirect(url_for('home'))
+                        return redirect(url_for('verify_phone_otp'))
 
             else:
                 msg = 'Incorrect username/password!'
@@ -678,11 +678,11 @@ def register():
                     (role, username, pwd_type, hashpwd, last_pwd_change,encrypted_email,'+6586751352', google_id, True, None,totp_key)
                 )
 
-                    mysql.connection.commit()
+                mysql.connection.commit()
                 msg = 'You have successfully registered!'
             else:
                 flash('Please verify your OTP before registering.')
-                return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+                # return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
 
     return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
 
@@ -762,99 +762,99 @@ def admin_register():
         return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
 
-# @app.route('/verify_phone_otp', methods=['GET','POST'])
-# @login_required
-# def verify_phone_otp():
-#     msg = ''
-#     if 'loggedin' not in session:
-#           return redirect(url_for('login'))
-#     if 'verify' == False:
-#          print("CAPTCHA verification is required")
-#          return redirect(url_for('login'))
-#     otp_form = OTPVerifyForm(request.form)
-#     if request.method == 'POST':
-#         if request.form['resend_otp']:
-#             resend_otp()
-#         if request.form['confirm_phone_otp']:
-#             confirm_phone_otp()
-#     session['otp_verified'] = False
-#     username = session['username']
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-#     account = cursor.fetchone()
-#
-#     if account:
-#           phone_number = account['phone_number']
-#           totp_key = account['totp_key']
-#           if totp_key:
-#               otp = verification_code(phone_number, totp_key)
-#               if otp:
-#                   session['phone_number'] = phone_number
-#                   session['otp'] = otp
-#                   session['otp_timestamp'] = time.time()
-#               else:
-#                 print('Error in sending OTP')
-#     else:
-#           print('Error in finding phone_number')
-#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
-#
-# @app.route('/confirm_phone_otp', methods=['GET','POST'])
-# @login_required
-# def confirm_phone_otp():
-#     otp_form = OTPVerifyForm(request.form)
-#     entered_otp = request.form['otp']
-#     print(session['otp'])
-#     otp_time = session['otp_timestamp']
-#     current_time = time.time()
-#
-#     username = session['username']
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
-#     account = cursor.fetchone()
-#     if account:
-#         totp_key = account['totp_key']
-#         if totp_key:
-#             otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
-#             if entered_otp == session['otp']:
-#                 if not otp_expired:
-#                     session['otp_verified'] = True
-#                     if session['role'] == 'admin' or session['role'] == 'super_admin':
-#                         msg = 'Success!'
-#                         return redirect(url_for('admin_home', msg=msg))
-#                     else:
-#                         msg = 'You have successfully logged in'
-#                         return redirect(url_for('home', msg=msg))
-#                 else:
-#                     msg = 'OTP has expired.\n Please request a new OTP and try again'
-#             else:
-#                 msg = 'Incorrect. Please try again'
-#         else:
-#             msg = 'Error in finding TOTP Secret Key'
-#     else:
-#         msg = 'Error in finding phone number'
-#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
-# @app.route('/resend_otp', methods=['GET','POST'])
-# @login_required
-# def resend_otp():
-#     otp_form = OTPVerifyForm(request.form)
-#     username = session['username']
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-#     account = cursor.fetchone()
-#     if account:
-#         phone_number = account['phone_number']
-#         totp_key = account['totp_key']
-#         otp = verification_code(phone_number, totp_key)
-#         if otp:
-#             session['phone_number'] = phone_number
-#             session['otp'] = otp
-#             session['otp_timestamp'] = time.time()
-#             msg = 'OTP has been resent. Please try again'
-#         else:
-#             msg = 'Error in sending OTP'
-#     else:
-#         msg= 'Error in finding phone_number'
-#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/verify_phone_otp', methods=['GET','POST'])
+@login_required
+def verify_phone_otp():
+    msg = ''
+    if 'loggedin' not in session:
+          return redirect(url_for('login'))
+    if 'verify' == False:
+         print("CAPTCHA verification is required")
+         return redirect(url_for('login'))
+    otp_form = OTPVerifyForm(request.form)
+    if request.method == 'POST':
+        if request.form['resend_otp']:
+            resend_otp()
+        if request.form['confirm_phone_otp']:
+            confirm_phone_otp()
+    session['otp_verified'] = False
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+
+    if account:
+          phone_number = account['phone_number']
+          totp_key = account['totp_key']
+          if totp_key:
+              otp = verification_code(phone_number, totp_key)
+              if otp:
+                  session['phone_number'] = phone_number
+                  session['otp'] = otp
+                  session['otp_timestamp'] = time.time()
+              else:
+                print('Error in sending OTP')
+    else:
+          print('Error in finding phone_number')
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+
+@app.route('/confirm_phone_otp', methods=['GET','POST'])
+@login_required
+def confirm_phone_otp():
+    otp_form = OTPVerifyForm(request.form)
+    entered_otp = request.form['otp']
+    print(session['otp'])
+    otp_time = session['otp_timestamp']
+    current_time = time.time()
+
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        totp_key = account['totp_key']
+        if totp_key:
+            otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
+            if entered_otp == session['otp']:
+                if not otp_expired:
+                    session['otp_verified'] = True
+                    if session['role'] == 'admin' or session['role'] == 'super_admin':
+                        msg = 'Success!'
+                        return redirect(url_for('admin_home', msg=msg))
+                    else:
+                        msg = 'You have successfully logged in'
+                        return redirect(url_for('home', msg=msg))
+                else:
+                    msg = 'OTP has expired.\n Please request a new OTP and try again'
+            else:
+                msg = 'Incorrect. Please try again'
+        else:
+            msg = 'Error in finding TOTP Secret Key'
+    else:
+        msg = 'Error in finding phone number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/resend_otp', methods=['GET','POST'])
+@login_required
+def resend_otp():
+    otp_form = OTPVerifyForm(request.form)
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        phone_number = account['phone_number']
+        totp_key = account['totp_key']
+        otp = verification_code(phone_number, totp_key)
+        if otp:
+            session['phone_number'] = phone_number
+            session['otp'] = otp
+            session['otp_timestamp'] = time.time()
+            msg = 'OTP has been resent. Please try again'
+        else:
+            msg = 'Error in sending OTP'
+    else:
+        msg= 'Error in finding phone_number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/webapp/home')
 @login_required

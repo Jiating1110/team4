@@ -28,7 +28,7 @@ class RegisterForm(Form):
 class LoginForm(Form):
     username=StringField('Username',[validators.DataRequired()])
     password=PasswordField('Password',[validators.DataRequired()])
-    recaptcha = RecaptchaField()
+
     totp_code = StringField('TOTP Code')  # Ensure this field is included
 
 class UpdateProfileForm(Form):
