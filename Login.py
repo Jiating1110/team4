@@ -74,7 +74,7 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
-
+iqah
 def get_session_username():
     # Default to 'anonymous' if the user is not logged in
     return session.get('username', 'anonymous')
