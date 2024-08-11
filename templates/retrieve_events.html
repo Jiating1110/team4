@@ -8,6 +8,9 @@
     {% for event in events %}
     <div class="event">
         <img src="{{ event.image_url }}" alt="{{ event.title }}">
+        {% if event.secure_uploads %}
+            <img src="{{ url_for('uploaded_file', filename=event.secure_uploads) }}" alt="{{ event.title }}">
+        {% endif %}
         <h3>{{ event.title }}</h3>
         <p>{{ event.description }}</p>
         <button onclick="window.location.href='{{url_for('register_event') }}'">Buy Now</button>

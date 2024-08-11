@@ -18,8 +18,8 @@ from datetime import date, timedelta, datetime
 
 import stripe
 
-from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
-from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify
+from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword,OTPVerifyForm
+from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify,send_from_directory
 from flask_limiter import Limiter
 
 from flask_mysqldb import MySQL
@@ -148,8 +148,10 @@ def verification_code(phone_number, totp_key):
             print(otp)
             session['otp'] = otp
 
+            # account_sid = 'AC7a1d687ad3fe859ad6636ed450197fea'
+            # auth_token = 'e617c93c6aded91e0c11de0b3e5c228c'
             account_sid = 'AC7a1d687ad3fe859ad6636ed450197fea'
-            auth_token = 'e617c93c6aded91e0c11de0b3e5c228c'
+            auth_token = 'bd86cda8a775c285c234321129722b5e'
             client = Client(account_sid, auth_token)
             message = client.messages.create(
                     body=f'Time-Based OTP verification code: {otp} ',
@@ -302,60 +304,77 @@ def reset_failed_attempts(ip_addr):
 
 
 MAX_ATTEMPTS = 3
+def check_ip_blocked(ip_addr):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+    result = cursor.fetchone()
+    ip_count = result['ip_count']
+    cursor.close()
+    return ip_count > 2
 
+def update_failed_attempts(ip_addr, username, attempts, block_time, block_num):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username = %s',
+        (datetime.now(), attempts, block_time, block_num, ip_addr, username))
+    mysql.connection.commit()
+    cursor.close()
+
+def insert_failed_attempt(ip_addr, username):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'INSERT INTO failed_login_attempts (ip_addr, username, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s, %s)',
+        (ip_addr, username, datetime.now(), 1, 30, 0))
+    mysql.connection.commit()
+    cursor.close()
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
-
-    login_form=LoginForm(request.form)
+    login_form = LoginForm(request.form)
 
     if request.method == 'POST' and login_form.validate():
         username = login_form.username.data
         password = login_form.password.data
-
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
         user_ip = request.remote_addr
 
-        cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
-        result = cursor.fetchone()
-        ip_count = result['ip_count']
-
-        # Block the IP if it appears more than 3 times
-        if ip_count > 2:
-            print('block')
+        if check_ip_blocked(user_ip):
             flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
-            cursor.close()
             return render_template('login.html', msg=msg, form=login_form)
 
-        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username = %s', (user_ip, username))
         record = cursor.fetchone()
+
         if record:
-            print('got record')
             attempts = record['attempts']
             block_time = record['block_time']
             block_num = record['block_num']
             last_attempt = record['attempt_time']
             time_elapsed = (datetime.now() - last_attempt).total_seconds()
 
-            # Check if the IP is currently blocked
-            if attempts > MAX_ATTEMPTS:
-                if time_elapsed < block_time:
-                    remaining_time = block_time - time_elapsed
-                    flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
-                    cursor.close()
-                    return render_template('login.html', msg=msg, form=login_form)
-                else:
+            if attempts > MAX_ATTEMPTS and time_elapsed < block_time:
+                remaining_time = block_time - time_elapsed
+                flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                cursor.close()
+                return render_template('login.html', msg=msg, form=login_form)
 
-                    attempts=0
-                    cursor.execute(
-                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-                        (attempts, block_time, block_num, user_ip,username))
+            if time_elapsed >= block_time:
+                attempts = 0
+                block_time = record['block_time']
+                block_num = record['block_num']
+            else:
+                attempts += 1
+                if attempts > MAX_ATTEMPTS:
+                    attempts = 0
+                    block_num += 1
+                    block_time = record['block_time'] * 2 if block_num > 1 else block_time
+                update_failed_attempts(user_ip, username, attempts, block_time, block_num)
+        else:
+            insert_failed_attempt(user_ip, username)
 
-        cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
-        # Fetch one record and return result
-        account = cursor.fetchone() #if account dont exist in db, return 0
-
+        cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, username))
+        account = cursor.fetchone()
+        cursor.close()
 
         if account:
             user_hashpwd = account['password']
@@ -375,82 +394,177 @@ def login():
                 if not os.path.exists(key_file_name):
                     return "Symmetric key file not found."
 
-                # Open and read the symmetric key file
-                file = open(key_file_name, 'rb')
-                key = file.read()
-                file.close()
-                # Load he Symmetric key
+                with open(key_file_name, 'rb') as file:
+                    key = file.read()
+
                 f = Fernet(key)
+                decrypted_email = f.decrypt(encrypted_email).decode()
 
-                # Decrypt the Encrypted Email address
-                decrypted_email = f.decrypt(encrypted_email)
-                email = decrypted_email.decode()
-
-
-                last_pwd_change=account['last_pwd_change']
-                date_difference=date.today()-last_pwd_change
-                print('login check date difference',date_difference)
+                last_pwd_change = account['last_pwd_change']
+                date_difference = date.today() - last_pwd_change
 
                 if date_difference >= timedelta(days=3):
                     flash('Your password is older than 3 days. Please change your password.')
                     return redirect(url_for('change_password'))
 
+                if account['role'] in ['admin', 'super_admin']:
+                    return redirect(url_for('verify_phone_otp'))
                 else:
-                    if account['role']=='admin' or account['role']=='super_admin':
-                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
-                        mysql.connection.commit()
-                        return redirect(url_for('verify_otp'))
-
-                    else:
-                        flash('You successfully log in ')
-                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
-                        mysql.connection.commit()
-                        return redirect(url_for('verify_otp'))
-
-
+                    flash('You successfully logged in.')
+                    return redirect(url_for('verify_phone_otp'))
             else:
                 msg = 'Incorrect username/password!'
-                print('fail')
-
-                attempt_time = datetime.now()
-                if record:
-                    attempts = record['attempts'] + 1
-                    block_time = record['block_time']
-                    block_num = record['block_num']
-                    if attempts>MAX_ATTEMPTS:
-                        attempts=0
-                        block_num=record['block_num']+1
-                        if block_num>1:
-                            block_time=record['block_time']*2
-                        else:
-                            block_time = record['block_time']
-                        last_attempt=record['attempt_time']
-                        time_elapsed = (datetime.now() - last_attempt).total_seconds()
-                        print('block time:', block_time)
-                        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-                            (attempt_time, attempts, block_time, block_num, user_ip,username))
-                        if time_elapsed < block_time:
-                            remaining_time = block_time - time_elapsed
-                            flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
-                            return render_template('login.html', msg=msg, form=login_form)
-
-                    cursor.execute(
-                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-                        (attempt_time, attempts, block_time, block_num, user_ip,username))
-                else:
-                    block_time = 30
-                    block_num = 0
-                    attempts = 1
-                    cursor.execute(
-                        'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
-                        (user_ip,username,attempt_time, attempts, block_time, block_num))
-                mysql.connection.commit()
-                cursor.close()
 
         else:
             msg = 'Incorrect username/password!'
 
+
     return render_template('login.html', msg=msg, form=login_form)
+
+# @app.route('/', methods=['GET', 'POST'])
+# def login():
+#     msg = ''
+#
+#     login_form=LoginForm(request.form)
+#     if request.method == 'POST' and login_form.validate():
+#         username = login_form.username.data
+#         password = login_form.password.data
+#         user_ip = request.remote_addr
+#         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#
+#         #block the ip addr
+#         cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+#         result = cursor.fetchone()
+#         ip_count = result['ip_count']
+#
+#         if ip_count > 2:
+#             print('block')
+#             flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
+#             cursor.close()
+#             return render_template('login.html', msg=msg, form=login_form)
+#
+#         #check the fail attempts
+#         cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+#         record = cursor.fetchone()
+#         if record:
+#             print('got record')
+#             attempts = record['attempts']
+#             block_time = record['block_time']
+#             block_num = record['block_num']
+#             last_attempt = record['attempt_time']
+#             time_elapsed = (datetime.now() - last_attempt).total_seconds()
+#
+#             # Check if the IP is currently blocked
+#             if attempts > MAX_ATTEMPTS:
+#                 if time_elapsed < block_time:
+#                     remaining_time = block_time - time_elapsed
+#                     flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+#                     cursor.close()
+#                     return render_template('login.html', msg=msg, form=login_form)
+#                 else:
+#                     attempts=0
+#                     cursor.execute(
+#                         'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+#                         (attempts, block_time, block_num, user_ip,username))
+#
+#         cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
+#         # Fetch one record and return result
+#         account = cursor.fetchone() #if account dont exist in db, return 0
+#
+#         if account:
+#             user_hashpwd = account['password']
+#             if bcrypt.check_password_hash(user_hashpwd, password):
+#                 if not account['is_verified']:
+#                     flash('Please verify your email address before logging in.', 'warning')
+#                     return redirect(url_for('login'))
+#
+#                 session['loggedin'] = True
+#                 session['id'] = account['id']
+#                 session['username'] = account['username']
+#                 session['role'] = account['role']
+#                 session['session_time'] = int(time.time())
+#
+#                 encrypted_email = account['email'].encode()
+#                 key_file_name = f"{username}_symmetric.key"
+#                 if not os.path.exists(key_file_name):
+#                     return "Symmetric key file not found."
+#
+#                 # Open and read the symmetric key file
+#                 file = open(key_file_name, 'rb')
+#                 key = file.read()
+#                 file.close()
+#                 # Load he Symmetric key
+#                 f = Fernet(key)
+#
+#                 # Decrypt the Encrypted Email address
+#                 decrypted_email = f.decrypt(encrypted_email)
+#                 email = decrypted_email.decode()
+#
+#
+#                 last_pwd_change=account['last_pwd_change']
+#                 date_difference=date.today()-last_pwd_change
+#                 print('login check date difference',date_difference)
+#
+#                 if date_difference >= timedelta(days=3):
+#                     flash('Your password is older than 3 days. Please change your password.')
+#                     return redirect(url_for('change_password'))
+#
+#                 else:
+#                     if account['role']=='admin' or account['role']=='super_admin':
+#                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+#                         mysql.connection.commit()
+#                         return redirect(url_for('verify_phone_otp'))
+#
+#                     else:
+#                         flash('You successfully log in ')
+#                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+#                         mysql.connection.commit()
+#                         return redirect(url_for('verify_phone_otp'))
+#
+#
+#             else:
+#                 msg = 'Incorrect username/password!'
+#                 print('fail')
+#
+#                 attempt_time = datetime.now()
+#                 if record:
+#                     attempts = record['attempts'] + 1
+#                     block_time = record['block_time']
+#                     block_num = record['block_num']
+#                     if attempts>MAX_ATTEMPTS:
+#                         attempts=0
+#                         block_num=record['block_num']+1
+#                         if block_num>1:
+#                             block_time=record['block_time']*2
+#                         else:
+#                             block_time = record['block_time']
+#                         last_attempt=record['attempt_time']
+#                         time_elapsed = (datetime.now() - last_attempt).total_seconds()
+#                         print('block time:', block_time)
+#                         cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+#                             (attempt_time, attempts, block_time, block_num, user_ip,username))
+#                         if time_elapsed < block_time:
+#                             remaining_time = block_time - time_elapsed
+#                             flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+#                             return render_template('login.html', msg=msg, form=login_form)
+#
+#                     cursor.execute(
+#                         'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+#                         (attempt_time, attempts, block_time, block_num, user_ip,username))
+#                 else:
+#                     block_time = 30
+#                     block_num = 0
+#                     attempts = 1
+#                     cursor.execute(
+#                         'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
+#                         (user_ip,username,attempt_time, attempts, block_time, block_num))
+#                 mysql.connection.commit()
+#                 cursor.close()
+#
+#         else:
+#             msg = 'Incorrect username/password!'
+#
+#     return render_template('login.html', msg=msg, form=login_form)
 
 @app.route('/logout')
 @login_required
@@ -477,7 +591,6 @@ def register():
     mssg = ''
     register_form = RegisterForm(request.form)
     otp_sent = False
-
 
     if request.method == 'POST':
         if 'send_otp' in request.form:  # If OTP send button is clicked
@@ -507,10 +620,30 @@ def register():
                 cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
                 account = cursor.fetchone()
 
+                #check duplicate acc name
                 if account:
                     if account['username'] == username:
                         flash('Username has been taken. Please choose a different username')
                         return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+                #check captcha
+                if 'verify' == False:
+                    mssg = 'Please complete CAPTCHA'
+
+                key = Fernet.generate_key()
+                # Write Symmetric key to file – wb:write and close file
+                key_file_name = f"{username}_symmetric.key"
+                with open(key_file_name, "wb") as fo:
+                    fo.write(key)
+                # Initialize Fernet Class
+                f = Fernet(key)
+
+                # convert email address to bytes before saving to Database
+                email = email.encode()
+                # Encrypt email address
+                encrypted_email = f.encrypt(email)
+                totp_key = generate_totp_key()
+
+                #store pwd
                 user_file = f"{username}_pwd"
                 try:
                     file = open(user_file, 'w')
@@ -521,14 +654,14 @@ def register():
 
                 # Insert user into database
                 cursor.execute(
-                'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id, is_verified, verification_token) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
-                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id, True, None))
-            mysql.connection.commit()
+                'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change,phone_number,email, google_id, is_verified, verification_token, totp_key) VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s,%s)',
+                (role, username, pwd_type, hashpwd, last_pwd_change, '+6586751352',encrypted_email, google_id, True, None,totp_key))
+                mysql.connection.commit()
 
             msg = 'You have successfully registered!'
         else:
             flash('Please verify your OTP before registering.')
-    return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+    return render_template('register.html', msg=msg, mssg=mssg,form=register_form, otp_sent=otp_sent)
 
 
 
@@ -539,7 +672,8 @@ def register():
 def admin_register():
     if 'loggedin' in session:
         if not super_admin() == True:
-            return 'Unauthorised Access! Only super admins can create admin accounts'
+            flash('Unauthorised Access! Only super admins can create admin accounts')
+            return redirect(url_for('admin_home'))
 
         msg = ''
         register_form = RegisterForm(request.form)
@@ -566,6 +700,20 @@ def admin_register():
                 # Account doesnt exists and the form data is valid, now insert new account into accounts table
                 hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
+                key = Fernet.generate_key()
+                # Write Symmetric key to file – wb:write and close file
+                key_file_name = f"{username}_symmetric.key"
+                with open(key_file_name, "wb") as fo:
+                    fo.write(key)
+                # Initialize Fernet Class
+                f = Fernet(key)
+
+                # convert email address to bytes before saving to Database
+                email = email.encode()
+                # Encrypt email address
+                encrypted_email = f.encrypt(email)
+                totp_key = generate_totp_key()
+
                 user_file = f"{username}_pwd"
                 try:
                     file = open(user_file, 'w')
@@ -579,6 +727,12 @@ def admin_register():
                                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
                 mysql.connection.commit()
 
+                # Insert user into database
+                cursor.execute(
+                    'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change,phone_number,email, google_id, is_verified, verification_token, totp_key) VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s,%s)',
+                    (role, username, pwd_type, hashpwd, last_pwd_change, '+6586751352', encrypted_email, google_id, True,None, totp_key))
+                mysql.connection.commit()
+
                 msg = 'You have successfully registered!'
                 return render_template('admin_home.html', msg=msg, username=session['username'])
         elif request.method == 'POST':  # verify if theres an input
@@ -588,6 +742,99 @@ def admin_register():
         return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
 
+@app.route('/verify_phone_otp', methods=['GET','POST'])
+@login_required
+def verify_phone_otp():
+    msg = ''
+    if 'loggedin' not in session:
+          return redirect(url_for('login'))
+    if 'verify' == False:
+         print("CAPTCHA verification is required")
+         return redirect(url_for('login'))
+    otp_form = OTPVerifyForm(request.form)
+    if request.method == 'POST':
+        if request.form['resend_otp']:
+            resend_otp()
+        if request.form['confirm_phone_otp']:
+            confirm_phone_otp()
+    session['otp_verified'] = False
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+
+    if account:
+          phone_number = account['phone_number']
+          totp_key = account['totp_key']
+          if totp_key:
+              otp = verification_code(phone_number, totp_key)
+              if otp:
+                  session['phone_number'] = phone_number
+                  session['otp'] = otp
+                  session['otp_timestamp'] = time.time()
+              else:
+                print('Error in sending OTP')
+    else:
+          print('Error in finding phone_number')
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+
+@app.route('/confirm_phone_otp', methods=['GET','POST'])
+@login_required
+def confirm_phone_otp():
+    otp_form = OTPVerifyForm(request.form)
+    entered_otp = request.form['otp']
+    print(session['otp'])
+    otp_time = session['otp_timestamp']
+    current_time = time.time()
+
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        totp_key = account['totp_key']
+        if totp_key:
+            otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
+            if entered_otp == session['otp']:
+                if not otp_expired:
+                    session['otp_verified'] = True
+                    if session['role'] == 'admin' or session['role'] == 'super_admin':
+                        msg = 'Success!'
+                        return redirect(url_for('admin_home', msg=msg))
+                    else:
+                        msg = 'You have successfully logged in'
+                        return redirect(url_for('home', msg=msg))
+                else:
+                    msg = 'OTP has expired.\n Please request a new OTP and try again'
+            else:
+                msg = 'Incorrect. Please try again'
+        else:
+            msg = 'Error in finding TOTP Secret Key'
+    else:
+        msg = 'Error in finding phone number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/resend_otp', methods=['GET','POST'])
+@login_required
+def resend_otp():
+    otp_form = OTPVerifyForm(request.form)
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+    if account:
+        phone_number = account['phone_number']
+        totp_key = account['totp_key']
+        otp = verification_code(phone_number, totp_key)
+        if otp:
+            session['phone_number'] = phone_number
+            session['otp'] = otp
+            session['otp_timestamp'] = time.time()
+            msg = 'OTP has been resent. Please try again'
+        else:
+            msg = 'Error in sending OTP'
+    else:
+        msg= 'Error in finding phone_number'
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/webapp/home')
 @login_required
@@ -617,6 +864,26 @@ def profile():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
         account = cursor.fetchone()
+
+        encrypted_email = account['email'].encode()
+        username = account['username']
+        key_file_name = f"{username}_symmetric.key"
+
+        if not os.path.exists(key_file_name):
+            return "Symmetric key file not found."
+        with open(key_file_name, 'rb') as key_file:
+            key = key_file.read()
+
+        f = Fernet(key)
+        decrypted_email = f.decrypt(encrypted_email)
+        email = decrypted_email.decode()
+
+        # Mask the email address
+        email_parts = email.split('@')
+        masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
+
+        account['email'] = masked_email
+
         return render_template('profile.html', account=account)
     return redirect(url_for('login'))
 
@@ -630,6 +897,25 @@ def admin_profile():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
         account = cursor.fetchone()
+
+        encrypted_email = account['email'].encode()
+        username = account['username']
+        key_file_name = f"{username}_symmetric.key"
+
+        if not os.path.exists(key_file_name):
+            return "Symmetric key file not found."
+        with open(key_file_name, 'rb') as key_file:
+            key = key_file.read()
+
+        f = Fernet(key)
+        decrypted_email = f.decrypt(encrypted_email)
+        email = decrypted_email.decode()
+
+        # Mask the email address
+        email_parts = email.split('@')
+        masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
+
+        account['email'] = masked_email
 
         return render_template('admin_profile.html', account=account)
     return redirect(url_for('login'))
@@ -650,9 +936,27 @@ def update_profile():
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
-
-
             current_username=account['username']
+
+            old_key_file_name = f"{current_username}_symmetric.key"
+            if not os.path.exists(old_key_file_name):
+                return "Symmetric key file not found."
+
+            new_key_file_name = f"{new_username}_symmetric.key"
+            try:
+                os.rename(old_key_file_name, new_key_file_name)
+            except Exception as e:
+                flash('Error renaming key file')
+                return redirect(url_for('update_profile'))
+
+                # Open and read the symmetric key file
+                with open(new_key_file_name, 'rb') as key_file:
+                    key = key_file.read()
+                f = Fernet(key)
+                # convert email address to bytes before saving to Database
+                email = email.encode()
+                # Encrypt email address
+                encrypted_email = f.encrypt(email)
 
             if new_username !=current_username:
                 cursor.execute('SELECT * FROM accounts WHERE username = %s', (new_username,))
@@ -665,7 +969,7 @@ def update_profile():
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('UPDATE accounts SET username = %s,email=%s WHERE id = %s',
-                           (new_username, email, session['id']))
+                           (new_username, encrypted_email, session['id']))
             mysql.connection.commit()
 
             msg = 'You have successfully update!'
@@ -678,7 +982,22 @@ def update_profile():
             id = session['id']
             cursor.execute('SELECT * FROM accounts WHERE id = %s ', (id,))
             account = cursor.fetchone()
-            email = account['email']
+
+            encrypted_email = account['email'].encode()
+            username = account['username']
+            key_file_name = f"{username}_symmetric.key"
+
+            if not os.path.exists(key_file_name):
+                return "Symmetric key file not found."
+
+            # Open and read the symmetric key file
+            with open(key_file_name, 'rb') as key_file:
+                key = key_file.read()
+
+            f = Fernet(key)
+            decrypted_email = f.decrypt(encrypted_email)
+            # account['email'] = decrypted_email.decode()
+            email = decrypted_email.decode()
 
             update_profile_form.username.data = account['username']
             update_profile_form.email.data = email
@@ -949,8 +1268,34 @@ def retrieve_users():
         cursor.execute('SELECT COUNT(*) AS users_count FROM accounts')
         count = cursor.fetchone()
         users_count = count['users_count']
-        cursor.execute('SELECT * FROM accounts')
+        cursor.execute('SELECT username, role, email, phone_number FROM accounts')
         users_info = cursor.fetchall()
+
+        for user in users_info:
+            encrypted_email = user['email'].encode()
+            username = user['username']
+            key_file_name = f"{username}_symmetric.key"
+
+            if not os.path.exists(key_file_name):
+                return f"Symmetric key file not found for user {username}."
+
+            with open(key_file_name, 'rb') as key_file:
+                key = key_file.read()
+
+            f = Fernet(key)
+            decrypted_email = f.decrypt(encrypted_email)
+            email = decrypted_email.decode()
+
+            email_parts = email.split('@')
+            masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
+
+            user['email'] = masked_email
+
+            phone_number = user['phone_number']
+            masked_phone_no = f"{phone_number[3]}******{phone_number[-2:]}"
+
+            user['phone_number'] = masked_phone_no
+
 
         # Show the profile page with account info
         return render_template('admin_retrieve_users.html', users_count=users_count, users_info=users_info)
@@ -968,7 +1313,16 @@ def admin_event():
         return render_template('admin_event.html', events=events)
     return redirect(url_for('login'))
 
+def files_allowed(filename):
+    return '.' in filename and filename.rsplit('.',1)[1].lower() in extensions_allowed
+@app.route('/secure_uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+@app.errorhandler(413)
+def file_size_exceeded(e):
+    flash('File size exceeds the maximum limit of 1MB','error')
+    return redirect(url_for('admin_event'))
 @app.route('/webapp/admin/create_event', methods=['POST', 'GET'])
 @admin_required
 @login_required
@@ -979,6 +1333,20 @@ def create_event():
         date = request.form['date']
         description = request.form['description']
         image_url = request.form['image_url']
+        file = request.files['file']
+
+        file_url = None
+        if file and files_allowed(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+            file.save(file_path)
+            file_url = url_for('uploaded_file', filename=filename)
+        elif file and not files_allowed(file.filename):
+            flash('File type not allowed', 'error')
+            return redirect(url_for('admin_event'))
+        else:
+            file_url = image_url
 
         save_event(title, description, date, image_url)
 
@@ -1132,7 +1500,6 @@ def send_otp_email(user, otp):
     except Exception as e:
         print(f"Error sending OTP email: {e}")
 
-
 @app.route('/send_otp', methods=['POST'])
 def send_otp():
     data = request.get_json()
@@ -1148,7 +1515,6 @@ def send_otp():
 
     send_otp_email(email, otp)
     return jsonify({'success': True})
-
 
 @app.route('/verify_otp', methods=['POST'])
 def verify_otp():
@@ -1169,7 +1535,6 @@ def verify_otp():
     session.pop('otp', None)  # Remove OTP from session
     session.pop('otp_expiry', None)  # Remove OTP expiry from session
     return jsonify({'success': True})
-
 
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):

@@ -106,6 +106,9 @@
                     {% endif %}
                 </div>
                 <div class="msg">{{ msg }}</div>
+                <div class="container">
+					{% include 'captcha.html' %}
+            	</div>
 
                 <!-- Hidden field to store OTP verification status -->
                 <input type="hidden" name="otp_verified" value="false">
@@ -113,6 +116,18 @@
             </form>
         </div>
     </div>
+    <script>
+				function verify(){
+					if (!updatePuzzlePiecePos()) {
+						document.querySelector('#mssg').textContent = "Please complete CAPTCHA";
+						mssg.className = "error";
+						return false;
+					} else{
+						document.querySelector('.mssg').textContent = '';
+						return true;
+					}
+				}
+    </script>
 
     <script>
         let otpExpiryTime = 0;
