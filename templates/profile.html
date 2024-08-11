@@ -34,6 +34,16 @@
         <input type="submit" value="Change Password">
     </form>
 
+    <h3>Security Settings</h3>
+    {% if not account.get('totp_secret') %}
+        <form action="{{ url_for('setup_totp') }}" method="post">
+            <input type="hidden" name="username" value="{{ account['username'] }}">
+            <input type="submit" value="Enable TOTP">
+        </form>
+    {% else %}
+        <p>TOTP is already enabled for your account.</p>
+    {% endif %}
+
 
 </div>
 {% endblock %}

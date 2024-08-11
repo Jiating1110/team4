@@ -319,3 +319,9 @@ strong {
     font-weight: bold;
 }
 
+.form-group {
+    margin-bottom: 1.5rem; /* Add space between form fields */
+}
+
+
+
