@@ -74,7 +74,7 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
-
+aaaa=0
 def get_session_username():
     # Default to 'anonymous' if the user is not logged in
     return session.get('username', 'anonymous')
@@ -263,7 +263,6 @@ def reset_failed_attempts(ip_addr):
 
 MAX_ATTEMPTS = 3
 
-
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
@@ -395,8 +394,6 @@ def login():
             msg = 'Incorrect username/password!'
 
     return render_template('login.html', msg=msg, form=login_form)
-
-
 
 @app.route('/logout')
 @login_required
