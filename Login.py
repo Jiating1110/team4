@@ -15,8 +15,7 @@ import jwt
 import time
 from datetime import date, timedelta, datetime
 import qrcode
-import hotp
-from io import BytesIO
+
 import random
 import stripe
 
