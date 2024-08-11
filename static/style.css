@@ -129,18 +129,20 @@ body {
   	background-color: #2868c7;
   	transition: background-color 0.2s;
 }
+
 #forgot_password{
-    background-color:red;
+
     margin-right:auto;
     margin-left:20px;
     margin-top:10px;
 }
 #google{
-   background-color:pink;
+
    margin-right:20px;
    margin-left:auto;
    margin-top:10px;
 }
+
 .navtop {
   	background-color: #2f3947;
   	height: 60px;

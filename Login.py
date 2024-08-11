@@ -79,7 +79,8 @@ limiter=Limiter(app=app,key_func=get_session_username)
 @app.errorhandler(429)
 def rate_limit_error(e):
     # Render the custom 404 error page
-    return render_template('429.html'), 429
+    flash('You have reached the maximum number of allowed requests for today. Please try again tomorrow')
+    return redirect(url_for('profile'))
 #determine action based on sesion state
 @app.before_request
 def log_session():
@@ -293,7 +294,19 @@ def login():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
         user_ip = request.remote_addr
-        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+
+        cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+        result = cursor.fetchone()
+        ip_count = result['ip_count']
+
+        # Block the IP if it appears more than 3 times
+        if ip_count > 2:
+            print('block')
+            flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
+            cursor.close()
+            return render_template('login.html', msg=msg, form=login_form)
+
+        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
         record = cursor.fetchone()
         if record:
             print('got record')
@@ -314,8 +327,8 @@ def login():
 
                     attempts=0
                     cursor.execute(
-                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
-                        (attempts, block_time, block_num, user_ip))
+                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempts, block_time, block_num, user_ip,username))
 
         cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
         # Fetch one record and return result
@@ -338,12 +351,12 @@ def login():
                     return redirect(url_for('change_password'))
                 else:
                     if account['role']=='admin' or account['role']=='super_admin':
-                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
                         return redirect(url_for('admin_home'))
                     else:
                         flash('You successfully log in ')
-                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
                         return redirect(url_for('home'))
             else:
@@ -355,8 +368,6 @@ def login():
                     attempts = record['attempts'] + 1
                     block_time = record['block_time']
                     block_num = record['block_num']
-                    # if block_num > 1:
-                    #     block_time = 30 * block_num
                     if attempts>MAX_ATTEMPTS:
                         attempts=0
                         block_num=record['block_num']+1
@@ -366,25 +377,24 @@ def login():
                             block_time = record['block_time']
                         last_attempt=record['attempt_time']
                         time_elapsed = (datetime.now() - last_attempt).total_seconds()
-                        cursor.execute(
-                            'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
-                            (attempt_time, attempts, block_time, block_num, user_ip))
+                        print('block time:', block_time)
+                        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                            (attempt_time, attempts, block_time, block_num, user_ip,username))
                         if time_elapsed < block_time:
-                            print('block time:',block_time)
                             remaining_time = block_time - time_elapsed
                             flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
                             return render_template('login.html', msg=msg, form=login_form)
 
                     cursor.execute(
-                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s',
-                        (attempt_time, attempts, block_time, block_num, user_ip))
+                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempt_time, attempts, block_time, block_num, user_ip,username))
                 else:
                     block_time = 30
                     block_num = 0
                     attempts = 1
                     cursor.execute(
-                        'INSERT INTO failed_login_attempts (ip_addr, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s)',
-                        (user_ip, attempt_time, attempts, block_time, block_num))
+                        'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
+                        (user_ip,username,attempt_time, attempts, block_time, block_num))
                 mysql.connection.commit()
                 cursor.close()
 
@@ -432,7 +442,7 @@ def register():
         account=cursor.fetchone()
         if account:
             if account['username']==username:
-                flash('Username has been taken. Please choose a different username')
+                flash('This username or email is already in use. Please choose a different one')
                 return render_template('register.html', msg=msg, form=register_form)
 
         user_file = f"{username}_pwd"
@@ -558,9 +568,20 @@ def update_profile():
             new_username=update_profile_form.username.data
             email=update_profile_form.email.data
 
+            #current_user info
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
+
+            current_username=account['username']
+
+            if new_username !=current_username:
+                cursor.execute('SELECT * FROM accounts WHERE username = %s', (new_username,))
+                existing_acc = cursor.fetchone()
+
+                if existing_acc:
+                    flash('This username or email is already in use. Please choose a different one')
+                    return render_template('update_profile.html', msg=msg, form=update_profile_form)
 
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -738,10 +759,33 @@ def verify_password():
         return render_template('verify_pwd.html',form=verify_form,msg=msg)
     return redirect(url_for('login'))
 
+
+def send_confirm_mail(email,username):
+    msg = MIMEMultipart()
+    msg['From'] = os.getenv('345ting678ting@gmail.com')
+    msg['To'] = email
+    msg['Subject'] = 'Your password has been changed'
+    formatted_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    body = f"""Hi {username},
+    Your password was recently changed on {formatted_time}.
+
+    If you did not initiate this request, please contact our Customer Service Team immediately here
+    
+    Cheers,
+    xx Team"""
+    msg.attach(MIMEText(body, 'plain'))
+
+    server = smtplib.SMTP(app.config['MAIL_SERVER'] ,app.config['MAIL_PORT'])
+    server.starttls()
+    server.login(app.config['MAIL_USERNAME'],app.config['MAIL_PASSWORD'])
+    server.sendmail(app.config['MAIL_USERNAME'], msg['To'], msg.as_string())
+    server.quit()
+
+    print('Email sent successfully.')
 @app.route('/webapp/profile/change_passowrd',methods=['GET','POST'])
 @login_required
 @session_timeout_required
-@limiter.limit('2 per day')
+
 def change_password():
     if 'loggedin' in session:
         print('hhh')
@@ -756,6 +800,7 @@ def change_password():
             account = cursor.fetchone()
             username=account['username']
             role=account['role']
+            email=account['email']
 
             if newpwd==confirm_password:
                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
@@ -788,6 +833,7 @@ def change_password():
                 cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s', (hashpwd,last_pwd_change,session['id']))
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
+                send_confirm_mail(email,username)
                 return render_template('change_pwd_successfully.html',username=username,role=role)
 
             else:
