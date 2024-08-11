@@ -21,6 +21,7 @@ import stripe
 
 from Forms import RegisterForm, LoginForm, UpdateProfileForm, VerifyPassword, VerifyEmail, ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, jsonify
+from flask_limiter import Limiter
 
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -75,6 +76,16 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
+def get_session_username():
+    # Default to 'anonymous' if the user is not logged in
+    return session.get('username', 'anonymous')
+limiter=Limiter(app=app,key_func=get_session_username)
+
+@app.errorhandler(429)
+def rate_limit_error(e):
+    # Render the custom 404 error page
+    flash('You have reached the maximum number of allowed requests for today. Please try again tomorrow')
+    return redirect(url_for('profile'))
 
 # determine action based on sesion state
 @app.before_request
@@ -244,20 +255,59 @@ def extend_session():
     session.permanent = True
     return '', 200
 
-
+MAX_ATTEMPTS = 3
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
-    login_form = LoginForm(request.form)
+    login_form=LoginForm(request.form)
 
     if request.method == 'POST' and login_form.validate():
         username = login_form.username.data
         password = login_form.password.data
         totp_code = login_form.totp_code.data
+        user_ip = request.remote_addr
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, username))
-        account = cursor.fetchone()
+
+        cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+        result = cursor.fetchone()
+        ip_count = result['ip_count']
+
+        # Block the IP if it appears more than 3 times
+        if ip_count > 2:
+            print('block')
+            flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
+            cursor.close()
+            return render_template('login.html', msg=msg, form=login_form)
+
+        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+        record = cursor.fetchone()
+        if record:
+            print('got record')
+            attempts = record['attempts']
+            block_time = record['block_time']
+            block_num = record['block_num']
+            last_attempt = record['attempt_time']
+            time_elapsed = (datetime.now() - last_attempt).total_seconds()
+
+            # Check if the IP is currently blocked
+            if attempts > MAX_ATTEMPTS:
+                if time_elapsed < block_time:
+                    remaining_time = block_time - time_elapsed
+                    flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                    cursor.close()
+                    return render_template('login.html', msg=msg, form=login_form)
+                else:
+
+                    attempts=0
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempts, block_time, block_num, user_ip,username))
+
+        cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
+        # Fetch one record and return result
+        account = cursor.fetchone() #if account dont exist in db, return 0
+
 
         if account:
             user_hashpwd = account['password']
@@ -271,33 +321,80 @@ def login():
                     if not otp.verify(totp_code):
                         flash('Invalid TOTP code.')
                         return redirect(url_for('login'))
+                if not account['is_verified']:
+                    flash('Please verify your email address before logging in.', 'warning')
+                    return redirect(url_for('login'))
 
-                # If password and TOTP code are correct
                 session['loggedin'] = True
                 session['id'] = account['id']
                 session['username'] = account['username']
                 session['role'] = account['role']
                 session['session_time'] = int(time.time())
 
-                last_pwd_change = account['last_pwd_change']
-                date_difference = date.today() - last_pwd_change
+
+                last_pwd_change=account['last_pwd_change']
+                date_difference=date.today()-last_pwd_change
+                print('login check date difference',date_difference)
 
                 if date_difference >= timedelta(days=3):
                     flash('Your password is older than 3 days. Please change your password.')
                     return redirect(url_for('change_password'))
+
                 else:
-                    if account['role'] in ['admin', 'super_admin']:
+                    if account['role']=='admin' or account['role']=='super_admin':
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+                        mysql.connection.commit()
                         return redirect(url_for('admin_home'))
                     else:
-                        flash('You have successfully logged in.')
+                        flash('You successfully log in ')
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+                        mysql.connection.commit()
                         return redirect(url_for('home'))
 
             else:
                 msg = 'Incorrect username/password!'
+                print('fail')
+
+                attempt_time = datetime.now()
+                if record:
+                    attempts = record['attempts'] + 1
+                    block_time = record['block_time']
+                    block_num = record['block_num']
+                    if attempts>MAX_ATTEMPTS:
+                        attempts=0
+                        block_num=record['block_num']+1
+                        if block_num>1:
+                            block_time=record['block_time']*2
+                        else:
+                            block_time = record['block_time']
+                        last_attempt=record['attempt_time']
+                        time_elapsed = (datetime.now() - last_attempt).total_seconds()
+                        print('block time:', block_time)
+                        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                            (attempt_time, attempts, block_time, block_num, user_ip,username))
+                        if time_elapsed < block_time:
+                            remaining_time = block_time - time_elapsed
+                            flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                            return render_template('login.html', msg=msg, form=login_form)
+
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempt_time, attempts, block_time, block_num, user_ip,username))
+                else:
+                    block_time = 30
+                    block_num = 0
+                    attempts = 1
+                    cursor.execute(
+                        'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
+                        (user_ip,username,attempt_time, attempts, block_time, block_num))
+                mysql.connection.commit()
+                cursor.close()
+
         else:
             msg = 'Incorrect username/password!'
 
     return render_template('login.html', msg=msg, form=login_form)
+
 
 
 @app.route('/qr_code')
@@ -775,6 +872,7 @@ def reset_request():
 
 @app.route('/webapp/verify_type', methods=['GET', 'POST'])
 @login_required
+@limiter.limit('2 per day')
 def verify_type():
     if 'loggedin' in session:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -831,8 +929,7 @@ def send_confirm_mail(email, username):
     print('Email sent successfully.')
 
 
-
-@app.route('/webapp/profile/change_password', methods=['GET', 'POST'])
+@app.route('/webapp/profile/change_passowrd', methods=['GET', 'POST'])
 @login_required
 @session_timeout_required
 def change_password():
@@ -847,8 +944,10 @@ def change_password():
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
+
             username = account['username']
             role = account['role']
+            email = account['email']
 
             if newpwd == confirm_password:
                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
@@ -882,7 +981,10 @@ def change_password():
                                (hashpwd, last_pwd_change, session['id']))
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
+
+                send_confirm_mail(email, username)
                 return render_template('change_pwd_successfully.html', username=username, role=role)
+
 
             else:
                 msg = 'Password didnt match.Pls try again'
