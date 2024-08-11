@@ -35,7 +35,7 @@ from functools import wraps
 
 import re
 
-
+bbb=0
 app = Flask(__name__, static_folder='static')
 
 # Change this to your secret key (can be anything, it's for extra protection)
