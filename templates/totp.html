@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Setup TOTP</title>
+</head>
+<body>
+    <h1>Set up TOTP</h1>
+    <p>Scan this QR code with Google Authenticator:</p>
+    <img src="{{ url_for('static', filename='static/qr_code.png') }}" alt="QR Code">
+    <p>Secret:  {{ totp_secret }}</p>
+</body>
+</html>

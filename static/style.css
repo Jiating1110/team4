@@ -314,3 +314,56 @@ body.loggedin {
     text-align:center;
 }
 
+.form-group {
+    margin-bottom: 1.5rem; /* Add space between form fields */
+}
+
+/* TOTP Section */
+.register form {
+    display: flex;
+    flex-direction: column; /* Stack form fields vertically */
+    align-items: stretch; /* Ensure form fields take full width */
+    padding: 1rem; /* Padding around form elements */
+}
+.totp-section {
+    margin-bottom: 1rem;
+}
+
+.totp-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* Space between label and checkbox */
+}
+
+.totp-checkbox label {
+    margin: 0; /* Remove default margin */
+    font-size: 16px; /* Adjust font size as needed */
+    line-height: 1.5; /* Improve line height for readability */
+}
+
+.totp-checkbox input[type="checkbox"] {
+    margin: 0; /* Align checkbox with label */
+    vertical-align: middle; /* Align checkbox with label text */
+}
+.totp-info {
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.qr-code {
+    max-width: 200px; /* Adjust size as needed */
+    height: auto;
+    border: 1px solid #ccc; /* Optional: border around the QR code */
+    padding: 0.5rem; /* Optional: padding around the QR code */
+}
+
+.enable_totp {
+    text-align: center; /* Center align text */
+    margin-top: 1rem; /* Space above the message */
+    font-size: 18px; /* Adjust font size if needed */
+    color: #333; /* Color for better visibility */
+    padding: 10px; /* Add some padding for readability */
+    background-color: #f8f9fa; /* Background color to make text stand out */
+    border: 1px solid #dee2e6; /* Border to define the message area */
+    border-radius: 4px; /* Rounded corners for the message box */
+}

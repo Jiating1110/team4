@@ -27,6 +27,7 @@ class RegisterForm(Form):
 class LoginForm(Form):
     username=StringField('Username',[validators.DataRequired()])
     password=PasswordField('Password',[validators.DataRequired()])
+    totp_code = StringField('TOTP Code')  # Ensure this field is included
 class UpdateProfileForm(Form):
     username = StringField('Username', [validators.DataRequired()])
     email = StringField('Email', [validators.Email(message='Invalid Email format'),

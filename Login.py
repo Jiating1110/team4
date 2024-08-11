@@ -14,6 +14,9 @@ from email.mime.multipart import MIMEMultipart
 import jwt
 import time
 from datetime import date,timedelta,datetime
+import qrcode
+import hotp
+from io import BytesIO
 
 import stripe
 
@@ -25,13 +28,14 @@ import MySQLdb.cursors
 from flask_bcrypt import Bcrypt   #buy the blender
 bcrypt = Bcrypt()   #initializing the blender
 
+import pyotp
 from cryptography.fernet import Fernet
 from functools import wraps
 
 
 
 import re
-app = Flask(__name__)
+app = Flask(__name__,static_folder='static')
 # Change this to your secret key (can be anything, it's for extra protection)
 app.secret_key = 'your secret key'
 # Enter your database connection details below
@@ -221,44 +225,51 @@ def extend_session():
     return '', 200
 
 
-
-
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
-    login_form=LoginForm(request.form)
+    login_form = LoginForm(request.form)
+
     if request.method == 'POST' and login_form.validate():
-        username=login_form.username.data
-        password=login_form.password.data
-        print(password)
+        username = login_form.username.data
+        password = login_form.password.data
+        totp_code = login_form.totp_code.data
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
-        # Fetch one record and return result
-        account = cursor.fetchone() #if account dont exist in db, return 0
+        cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, username))
+        account = cursor.fetchone()
+
         if account:
             user_hashpwd = account['password']
-            if account and bcrypt.check_password_hash(user_hashpwd, password):
+            if bcrypt.check_password_hash(user_hashpwd, password):
+                if account.get('totp_secret'):
+                    if not totp_code:
+                        flash('TOTP code is required.')
+                        return redirect(url_for('login'))
+
+                    otp = pyotp.TOTP(account['totp_secret'])
+                    if not otp.verify(totp_code):
+                        flash('Invalid TOTP code.')
+                        return redirect(url_for('login'))
+
+                # If password and TOTP code are correct
                 session['loggedin'] = True
                 session['id'] = account['id']
                 session['username'] = account['username']
-                session['role']=account['role']
+                session['role'] = account['role']
                 session['session_time'] = int(time.time())
 
+                last_pwd_change = account['last_pwd_change']
+                date_difference = date.today() - last_pwd_change
 
-                last_pwd_change=account['last_pwd_change']
-
-
-                date_difference=date.today()-last_pwd_change
-                print('login check date difference',date_difference)
                 if date_difference >= timedelta(days=3):
-                    flash('Your Password Already 3 days.Please change your password')
+                    flash('Your password is older than 3 days. Please change your password.')
                     return redirect(url_for('change_password'))
                 else:
-                    if account['role']=='admin' or account['role']=='super_admin':
+                    if account['role'] in ['admin', 'super_admin']:
                         return redirect(url_for('admin_home'))
                     else:
-                        flash('You successfully log in ')
+                        flash('You have successfully logged in.')
                         return redirect(url_for('home'))
 
             else:
@@ -266,8 +277,119 @@ def login():
         else:
             msg = 'Incorrect username/password!'
 
-    return render_template('login.html', msg=msg,form=login_form)
+    return render_template('login.html', msg=msg, form=login_form)
 
+
+@app.route('/qr_code')
+def qr_code():
+    return render_template('totp.html')
+
+def generate_qr_code(provisioning_uri):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(provisioning_uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill='black', back_color='white')
+    img.show()
+    return img
+
+def save_qr_code_image(img, qr_file_path):
+    try:
+        os.makedirs(os.path.dirname(qr_file_path), exist_ok=True)
+        img.save(qr_file_path)
+        print(f"QR Code saved at: {qr_file_path}")  # Debugging line
+    except Exception as e:
+        print(f"Error saving QR code image: {e}")
+
+@app.route('/setup_totp', methods=['GET', 'POST'])
+def setup_totp():
+    if request.method == 'POST':
+        username = request.form.get('username')  # Retrieve username from form
+
+        if username:
+            user = get_user_by_username(username)
+
+            if user:
+                if user.get('totp_secret'):
+                    flash('TOTP is already enabled.')
+                    return redirect(url_for('profile'))
+
+                totp = pyotp.TOTP(pyotp.random_base32())
+                secret = totp.secret
+                user['totp_secret'] = secret
+
+                # Save the secret to the database
+                cursor = mysql.connection.cursor()
+                cursor.execute('UPDATE accounts SET totp_secret = %s WHERE username = %s', (secret, username))
+                mysql.connection.commit()
+
+                # Generate QR code URL
+                provisioning_uri = totp.provisioning_uri(name='iqah', issuer_name="Google")
+                print(f"Provisioning URI: {provisioning_uri}")
+                qr_code_img = generate_qr_code(provisioning_uri)
+                qr_file_path = 'static/qr_code.png'
+                save_qr_code_image(qr_code_img, qr_file_path)
+
+
+                return render_template('totp.html', totp_secret=secret)
+
+            flash('User not found.')
+            return redirect(url_for('profile'))
+
+    # Handle GET request
+    return render_template('totp.html')
+
+
+
+@app.route('/verify_totp', methods=['POST'])
+def verify_totp():
+    username = request.form['iqah']
+    user_input_code = request.form['totp_code']
+
+    user = get_user_by_username(username)
+
+    if user:
+        secret = user.get('totp_secret')
+        if secret:
+            totp = pyotp.TOTP(secret)
+            print(f"Secret: {secret}")  # Debugging line
+            print(f"User Input Code: {user_input_code}")  # Debugging line
+            print(f"Current OTP: {totp.now()}")  # Debugging line
+            if totp.verify(user_input_code):
+                flash('TOTP code verified successfully.')
+                return redirect(url_for('profile'))
+            else:
+                flash('Invalid TOTP code.')
+        else:
+            flash('TOTP secret not found for the user.')
+    else:
+        flash('User not found.')
+
+    return redirect(url_for('setup_totp'))
+
+
+def simulate_totp_for_time_intervals(secret, intervals, time_step=30):
+    otp = pyotp.TOTP(secret)
+    current_time = time.time()  # Current time in seconds
+    codes = []
+    for interval in intervals:
+        # Calculate time offset from current time
+        timestamp = current_time - (interval * time_step)
+        # Generate OTP for that specific time
+        otp_code = otp.at(timestamp)
+        codes.append((timestamp, otp_code))
+    return codes
+
+
+def get_user_by_username(username):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+    user = cursor.fetchone()
+    return user
 
 @app.route('/logout')
 @login_required
@@ -290,50 +412,58 @@ def logout():
 @app.route('/webapp/register', methods=['GET', 'POST'])
 def register():
     msg = ''
-    register_form=RegisterForm(request.form)
+    register_form = RegisterForm(request.form)
     if request.method == 'POST' and register_form.validate():
-        username=register_form.username.data
-        password=register_form.password.data
-        email=register_form.email.data
-        role='customer'
-        pwd_type='user'
-        google_id='Null'
-        last_pwd_change=date.today()
+        username = register_form.username.data
+        password = register_form.password.data
+        email = register_form.email.data
+        role = 'customer'
+        pwd_type = 'user'
+        google_id = 'Null'
+        last_pwd_change = date.today()
+
+        # Hash the user's password
         hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
-        account=cursor.fetchone()
+        cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+        account = cursor.fetchone()
+
         if account:
-            if account['username']==username:
+            if account['username'] == username:
                 flash('Username has been taken. Please choose a different username')
                 return render_template('register.html', msg=msg, form=register_form)
 
+        # Generate TOTP secret
+        secret = pyotp.random_base32()
+
+        # Save the hashed password to a file
         user_file = f"{username}_pwd"
         try:
-            file=open(user_file,'w')
-            file.write("{}\n".format(hashpwd))
+            with open(user_file, 'w') as file:
+                file.write("{}\n".format(hashpwd))
             print(f"Hashed password successfully written to {user_file}")
         except Exception as e:
             print(f"Error writing hashed password to file: {e}")
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        #cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s,%s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
+        # Insert the new account into the accounts table, including the TOTP secret
         cursor.execute(
-            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s)',
             (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id)
         )
 
         mysql.connection.commit()
         msg = 'You have successfully registered!'
 
-    return render_template('register.html', msg=msg,form=register_form)
+    return render_template('register.html', msg=msg, form=register_form)
+
 @app.route('/webapp/admin/register', methods=['GET', 'POST'])
 @admin_required
 @login_required
 def admin_register():
     if 'loggedin' in session:
-        if not super_admin() == True:
+        if not super_admin():
             return 'Unauthorised Access! Only super admins can create admin accounts'
 
         msg = ''
@@ -349,38 +479,38 @@ def admin_register():
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
-            # cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, email))
             account = cursor.fetchone()
 
             if account:
-                if account['username'] == username:
-                    msg = 'Username has been taken. Please choose a different username'
-
-                return render_template('admin_register.html', msg=msg,form=register_form)
+                msg = 'Username has been taken. Please choose a different username'
+                return render_template('admin_register.html', msg=msg, form=register_form)
             else:
-                # Account doesnt exists and the form data is valid, now insert new account into accounts table
                 hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
+                # Generate TOTP secret
+                secret = pyotp.random_base32()
+
+                # Save the hashed password to a file
                 user_file = f"{username}_pwd"
                 try:
-                    file = open(user_file, 'w')
-                    file.write("{}\n".format(hashpwd))
+                    with open(user_file, 'w') as file:
+                        file.write("{}\n".format(hashpwd))
                     print(f"Hashed password successfully written to {user_file}")
                 except Exception as e:
                     print(f"Error writing hashed password to file: {e}")
 
-                cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
+                # Insert the new account into the accounts table, including the secret
+                cursor.execute('INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id, secret) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+                               (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id, secret))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
-                return render_template('admin_home.html', msg=msg,username=session['username'])
-        elif request.method == 'POST': #verify if theres an input
-            # Form is empty... (no POST data)
+                return render_template('admin_home.html', msg=msg, username=session['username'])
+        elif request.method == 'POST':
             msg = 'Please fill out the form!'
-            # Show registration form with message (if any)
-        return render_template('admin_register.html', msg=msg,form=register_form)
+        return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
+
 @app.route('/webapp/home')
 @login_required
 @session_timeout_required
@@ -400,17 +530,24 @@ def admin_home():
     return redirect(url_for('login'))
 
 
-@app.route('/webapp/profile',methods=['GET','POST'])
+# User Profile Route
+@app.route('/webapp/profile', methods=['GET', 'POST'])
+@app.route('/profile', methods=['GET', 'POST'])
 @login_required
 @session_timeout_required
 def profile():
-    if 'loggedin' in session:
+    if 'username' in session:
+        username = session['username']
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+        cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
         account = cursor.fetchone()
         return render_template('profile.html', account=account)
-    return redirect(url_for('login'))
-@app.route('/webapp/admin/profile',methods=['GET','POST'])
+    else:
+        flash('You need to log in first.')
+        return redirect(url_for('login'))
+
+# Admin Profile Route
+@app.route('/webapp/admin/profile', methods=['GET', 'POST'])
 @admin_required
 @login_required
 @session_timeout_required
@@ -419,47 +556,40 @@ def admin_profile():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
         account = cursor.fetchone()
-
         return render_template('admin_profile.html', account=account)
     return redirect(url_for('login'))
 
-@app.route('/webapp/profile/update',methods=['GET','POST'])
+# Update Profile Route
+@app.route('/webapp/profile/update', methods=['GET', 'POST'])
 @login_required
 @session_timeout_required
 def update_profile():
     if 'loggedin' in session:
-        msg=' '
-        update_profile_form=UpdateProfileForm(request.form)
-        if request.method=='POST' and update_profile_form.validate():
-            new_username=update_profile_form.username.data
-            email=update_profile_form.email.data
+        msg = ''
+        update_profile_form = UpdateProfileForm(request.form)
+        if request.method == 'POST' and update_profile_form.validate():
+            new_username = update_profile_form.username.data
+            email = update_profile_form.email.data
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-            cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
-            account = cursor.fetchone()
-
-
-            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-            cursor.execute('UPDATE accounts SET username = %s,email=%s WHERE id = %s', (new_username,email, session['id']))
+            cursor.execute('UPDATE accounts SET username = %s, email = %s WHERE id = %s',
+                           (new_username, email, session['id']))
             mysql.connection.commit()
 
-            msg='You have successfully update!'
-            if account['role'] == 'admin' or account['role']=='super_admin':
+            msg = 'You have successfully updated your profile!'
+            if session.get('role') in ['admin', 'super_admin']:
                 return redirect(url_for('admin_profile'))
             else:
                 return redirect(url_for('profile'))
         else:
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-            id = session['id']
-            cursor.execute('SELECT * FROM accounts WHERE id = %s ', (id,))
-            account=cursor.fetchone()
-            email=account['email']
+            cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+            account = cursor.fetchone()
 
-            update_profile_form.username.data=account['username']
-            update_profile_form.email.data=email
-            return render_template('update_profile.html',msg=msg,form=update_profile_form,account=account)
+            update_profile_form.username.data = account['username']
+            update_profile_form.email.data = account['email']
+            return render_template('update_profile.html', msg=msg, form=update_profile_form, account=account)
     return redirect(url_for('login'))
-
 
 
 def get_reset_token(user,expires=200):
@@ -839,3 +969,6 @@ def delete(order_id):
 
 if __name__== '__main__':
     app.run(debug=True)
+
+
+    # Use a known secr
