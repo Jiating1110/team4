@@ -34,7 +34,9 @@ from functools import wraps
 
 import re
 
+
 app = Flask(__name__, static_folder='static')
+
 # Change this to your secret key (can be anything, it's for extra protection)
 app.secret_key = 'your secret key'
 # Enter your database connection details below
