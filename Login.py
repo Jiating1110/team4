@@ -304,172 +304,77 @@ def reset_failed_attempts(ip_addr):
 
 
 MAX_ATTEMPTS = 3
-def check_ip_blocked(ip_addr):
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
-    result = cursor.fetchone()
-    ip_count = result['ip_count']
-    cursor.close()
-    return ip_count > 2
-
-def update_failed_attempts(ip_addr, username, attempts, block_time, block_num):
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute(
-        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username = %s',
-        (datetime.now(), attempts, block_time, block_num, ip_addr, username))
-    mysql.connection.commit()
-    cursor.close()
-
-def insert_failed_attempt(ip_addr, username):
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute(
-        'INSERT INTO failed_login_attempts (ip_addr, username, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s, %s)',
-        (ip_addr, username, datetime.now(), 1, 30, 0))
-    mysql.connection.commit()
-    cursor.close()
-@app.route('/', methods=['GET', 'POST'])
-def login():
-    msg = ''
-    login_form = LoginForm(request.form)
-
-    if request.method == 'POST' and login_form.validate():
-        username = login_form.username.data
-        password = login_form.password.data
-        user_ip = request.remote_addr
-
-        if check_ip_blocked(user_ip):
-            flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
-            return render_template('login.html', msg=msg, form=login_form)
-
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username = %s', (user_ip, username))
-        record = cursor.fetchone()
-
-        if record:
-            attempts = record['attempts']
-            block_time = record['block_time']
-            block_num = record['block_num']
-            last_attempt = record['attempt_time']
-            time_elapsed = (datetime.now() - last_attempt).total_seconds()
-
-            if attempts > MAX_ATTEMPTS and time_elapsed < block_time:
-                remaining_time = block_time - time_elapsed
-                flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
-                cursor.close()
-                return render_template('login.html', msg=msg, form=login_form)
-
-            if time_elapsed >= block_time:
-                attempts = 0
-                block_time = record['block_time']
-                block_num = record['block_num']
-            else:
-                attempts += 1
-                if attempts > MAX_ATTEMPTS:
-                    attempts = 0
-                    block_num += 1
-                    block_time = record['block_time'] * 2 if block_num > 1 else block_time
-                update_failed_attempts(user_ip, username, attempts, block_time, block_num)
-        else:
-            insert_failed_attempt(user_ip, username)
-
-        cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, username))
-        account = cursor.fetchone()
-        cursor.close()
-
-        if account:
-            user_hashpwd = account['password']
-            if bcrypt.check_password_hash(user_hashpwd, password):
-                if not account['is_verified']:
-                    flash('Please verify your email address before logging in.', 'warning')
-                    return redirect(url_for('login'))
-
-                session['loggedin'] = True
-                session['id'] = account['id']
-                session['username'] = account['username']
-                session['role'] = account['role']
-                session['session_time'] = int(time.time())
-
-                encrypted_email = account['email'].encode()
-                key_file_name = f"{username}_symmetric.key"
-                if not os.path.exists(key_file_name):
-                    return "Symmetric key file not found."
-
-                with open(key_file_name, 'rb') as file:
-                    key = file.read()
-
-                f = Fernet(key)
-                decrypted_email = f.decrypt(encrypted_email).decode()
-
-                last_pwd_change = account['last_pwd_change']
-                date_difference = date.today() - last_pwd_change
-
-                if date_difference >= timedelta(days=3):
-                    flash('Your password is older than 3 days. Please change your password.')
-                    return redirect(url_for('change_password'))
-
-                if account['role'] in ['admin', 'super_admin']:
-                    return redirect(url_for('verify_phone_otp'))
-                else:
-                    flash('You successfully logged in.')
-                    return redirect(url_for('verify_phone_otp'))
-            else:
-                msg = 'Incorrect username/password!'
-
-        else:
-            msg = 'Incorrect username/password!'
-
-
-    return render_template('login.html', msg=msg, form=login_form)
-
+# def check_ip_blocked(ip_addr):
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (ip_addr,))
+#     result = cursor.fetchone()
+#     ip_count = result['ip_count']
+#     cursor.close()
+#     return ip_count > 2
+#
+# def update_failed_attempts(ip_addr, username, attempts, block_time, block_num):
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute(
+#         'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username = %s',
+#         (datetime.now(), attempts, block_time, block_num, ip_addr, username))
+#     mysql.connection.commit()
+#     cursor.close()
+#
+# def insert_failed_attempt(ip_addr, username):
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute(
+#         'INSERT INTO failed_login_attempts (ip_addr, username, attempt_time, attempts, block_time, block_num) VALUES (%s, %s, %s, %s, %s, %s)',
+#         (ip_addr, username, datetime.now(), 1, 30, 0))
+#     mysql.connection.commit()
+#     cursor.close()
 # @app.route('/', methods=['GET', 'POST'])
 # def login():
 #     msg = ''
+#     login_form = LoginForm(request.form)
 #
-#     login_form=LoginForm(request.form)
 #     if request.method == 'POST' and login_form.validate():
 #         username = login_form.username.data
 #         password = login_form.password.data
 #         user_ip = request.remote_addr
-#         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 #
-#         #block the ip addr
-#         cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
-#         result = cursor.fetchone()
-#         ip_count = result['ip_count']
-#
-#         if ip_count > 2:
-#             print('block')
+#         if check_ip_blocked(user_ip):
 #             flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
-#             cursor.close()
 #             return render_template('login.html', msg=msg, form=login_form)
 #
-#         #check the fail attempts
-#         cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+#         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#         cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username = %s', (user_ip, username))
 #         record = cursor.fetchone()
+#
 #         if record:
-#             print('got record')
 #             attempts = record['attempts']
 #             block_time = record['block_time']
 #             block_num = record['block_num']
 #             last_attempt = record['attempt_time']
 #             time_elapsed = (datetime.now() - last_attempt).total_seconds()
 #
-#             # Check if the IP is currently blocked
-#             if attempts > MAX_ATTEMPTS:
-#                 if time_elapsed < block_time:
-#                     remaining_time = block_time - time_elapsed
-#                     flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
-#                     cursor.close()
-#                     return render_template('login.html', msg=msg, form=login_form)
-#                 else:
-#                     attempts=0
-#                     cursor.execute(
-#                         'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-#                         (attempts, block_time, block_num, user_ip,username))
+#             if attempts > MAX_ATTEMPTS and time_elapsed < block_time:
+#                 remaining_time = block_time - time_elapsed
+#                 flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+#                 cursor.close()
+#                 return render_template('login.html', msg=msg, form=login_form)
 #
-#         cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
-#         # Fetch one record and return result
-#         account = cursor.fetchone() #if account dont exist in db, return 0
+#             if time_elapsed >= block_time:
+#                 attempts = 0
+#                 block_time = record['block_time']
+#                 block_num = record['block_num']
+#             else:
+#                 attempts += 1
+#                 if attempts > MAX_ATTEMPTS:
+#                     attempts = 0
+#                     block_num += 1
+#                     block_time = record['block_time'] * 2 if block_num > 1 else block_time
+#                 update_failed_attempts(user_ip, username, attempts, block_time, block_num)
+#         else:
+#             insert_failed_attempt(user_ip, username)
+#
+#         cursor.execute('SELECT * FROM accounts WHERE username = %s OR email = %s', (username, username))
+#         account = cursor.fetchone()
+#         cursor.close()
 #
 #         if account:
 #             user_hashpwd = account['password']
@@ -489,82 +394,180 @@ def login():
 #                 if not os.path.exists(key_file_name):
 #                     return "Symmetric key file not found."
 #
-#                 # Open and read the symmetric key file
-#                 file = open(key_file_name, 'rb')
-#                 key = file.read()
-#                 file.close()
-#                 # Load he Symmetric key
+#                 with open(key_file_name, 'rb') as file:
+#                     key = file.read()
+#
 #                 f = Fernet(key)
+#                 decrypted_email = f.decrypt(encrypted_email).decode()
 #
-#                 # Decrypt the Encrypted Email address
-#                 decrypted_email = f.decrypt(encrypted_email)
-#                 email = decrypted_email.decode()
-#
-#
-#                 last_pwd_change=account['last_pwd_change']
-#                 date_difference=date.today()-last_pwd_change
-#                 print('login check date difference',date_difference)
+#                 last_pwd_change = account['last_pwd_change']
+#                 date_difference = date.today() - last_pwd_change
 #
 #                 if date_difference >= timedelta(days=3):
 #                     flash('Your password is older than 3 days. Please change your password.')
 #                     return redirect(url_for('change_password'))
 #
+#                 if account['role'] in ['admin', 'super_admin']:
+#                     return redirect(url_for('admin_home'))
+#                     # return redirect(url_for('verify_phone_otp'))
 #                 else:
-#                     if account['role']=='admin' or account['role']=='super_admin':
-#                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
-#                         mysql.connection.commit()
-#                         return redirect(url_for('verify_phone_otp'))
-#
-#                     else:
-#                         flash('You successfully log in ')
-#                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
-#                         mysql.connection.commit()
-#                         return redirect(url_for('verify_phone_otp'))
-#
-#
+#                     flash('You successfully logged in.')
+#                     return redirect(url_for('home'))
+#                     # return redirect(url_for('verify_phone_otp'))
 #             else:
 #                 msg = 'Incorrect username/password!'
-#                 print('fail')
-#
-#                 attempt_time = datetime.now()
-#                 if record:
-#                     attempts = record['attempts'] + 1
-#                     block_time = record['block_time']
-#                     block_num = record['block_num']
-#                     if attempts>MAX_ATTEMPTS:
-#                         attempts=0
-#                         block_num=record['block_num']+1
-#                         if block_num>1:
-#                             block_time=record['block_time']*2
-#                         else:
-#                             block_time = record['block_time']
-#                         last_attempt=record['attempt_time']
-#                         time_elapsed = (datetime.now() - last_attempt).total_seconds()
-#                         print('block time:', block_time)
-#                         cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-#                             (attempt_time, attempts, block_time, block_num, user_ip,username))
-#                         if time_elapsed < block_time:
-#                             remaining_time = block_time - time_elapsed
-#                             flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
-#                             return render_template('login.html', msg=msg, form=login_form)
-#
-#                     cursor.execute(
-#                         'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
-#                         (attempt_time, attempts, block_time, block_num, user_ip,username))
-#                 else:
-#                     block_time = 30
-#                     block_num = 0
-#                     attempts = 1
-#                     cursor.execute(
-#                         'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
-#                         (user_ip,username,attempt_time, attempts, block_time, block_num))
-#                 mysql.connection.commit()
-#                 cursor.close()
 #
 #         else:
 #             msg = 'Incorrect username/password!'
 #
+#
 #     return render_template('login.html', msg=msg, form=login_form)
+
+@app.route('/', methods=['GET', 'POST'])
+def login():
+    msg = ''
+
+    login_form=LoginForm(request.form)
+    if request.method == 'POST' and login_form.validate():
+        username = login_form.username.data
+        password = login_form.password.data
+        user_ip = request.remote_addr
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        #block the ip addr
+        cursor.execute('SELECT COUNT(*) as ip_count FROM failed_login_attempts WHERE ip_addr = %s', (user_ip,))
+        result = cursor.fetchone()
+        ip_count = result['ip_count']
+
+        if ip_count > 2:
+            print('block')
+            flash('Your IP address has been blocked due to unusual activity. Please contact support for assistance.')
+            cursor.close()
+            return render_template('login.html', msg=msg, form=login_form)
+
+        #check the fail attempts
+        cursor.execute('SELECT * FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+        record = cursor.fetchone()
+        if record:
+            print('got record')
+            attempts = record['attempts']
+            block_time = record['block_time']
+            block_num = record['block_num']
+            last_attempt = record['attempt_time']
+            time_elapsed = (datetime.now() - last_attempt).total_seconds()
+
+            # Check if the IP is currently blocked
+            if attempts > MAX_ATTEMPTS:
+                if time_elapsed < block_time:
+                    remaining_time = block_time - time_elapsed
+                    flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                    cursor.close()
+                    return render_template('login.html', msg=msg, form=login_form)
+                else:
+                    attempts=0
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = NULL, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempts, block_time, block_num, user_ip,username))
+
+        cursor.execute('SELECT * FROM accounts WHERE username = %s or email=%s', (username,username))
+        # Fetch one record and return result
+        account = cursor.fetchone() #if account dont exist in db, return 0
+
+        if account:
+            user_hashpwd = account['password']
+            if bcrypt.check_password_hash(user_hashpwd, password):
+                if not account['is_verified']:
+                    flash('Please verify your email address before logging in.', 'warning')
+                    return redirect(url_for('login'))
+
+                session['loggedin'] = True
+                session['id'] = account['id']
+                session['username'] = account['username']
+                session['role'] = account['role']
+                session['session_time'] = int(time.time())
+
+                encrypted_email = account['email'].encode()
+                key_file_name = f"{username}_symmetric.key"
+                if not os.path.exists(key_file_name):
+                    return "Symmetric key file not found."
+
+                # Open and read the symmetric key file
+                file = open(key_file_name, 'rb')
+                key = file.read()
+                file.close()
+                # Load he Symmetric key
+                f = Fernet(key)
+
+                # Decrypt the Encrypted Email address
+                decrypted_email = f.decrypt(encrypted_email)
+                email = decrypted_email.decode()
+
+
+                last_pwd_change=account['last_pwd_change']
+                date_difference=date.today()-last_pwd_change
+                print('login check date difference',date_difference)
+
+                if date_difference >= timedelta(days=3):
+                    flash('Your password is older than 3 days. Please change your password.')
+                    return redirect(url_for('change_password'))
+
+                else:
+                    if account['role']=='admin' or account['role']=='super_admin':
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+                        mysql.connection.commit()
+                        return redirect(url_for('admin_home'))
+                        # return redirect(url_for('verify_phone_otp'))
+
+                    else:
+                        flash('You successfully log in ')
+                        cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
+                        mysql.connection.commit()
+                        return redirect(url_for('home'))
+                        # return redirect(url_for('verify_phone_otp'))
+
+            else:
+                msg = 'Incorrect username/password!'
+                print('fail')
+
+                attempt_time = datetime.now()
+                if record:
+                    attempts = record['attempts'] + 1
+                    block_time = record['block_time']
+                    block_num = record['block_num']
+                    if attempts>MAX_ATTEMPTS:
+                        attempts=0
+                        block_num=record['block_num']+1
+                        if block_num>1:
+                            block_time=record['block_time']*2
+                        else:
+                            block_time = record['block_time']
+                        last_attempt=record['attempt_time']
+                        time_elapsed = (datetime.now() - last_attempt).total_seconds()
+                        print('block time:', block_time)
+                        cursor.execute('UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                            (attempt_time, attempts, block_time, block_num, user_ip,username))
+                        if time_elapsed < block_time:
+                            remaining_time = block_time - time_elapsed
+                            flash(f'Too many failed attempts. Please try again after {int(remaining_time)} seconds.')
+                            return render_template('login.html', msg=msg, form=login_form)
+
+                    cursor.execute(
+                        'UPDATE failed_login_attempts SET attempt_time = %s, attempts = %s, block_time = %s, block_num = %s WHERE ip_addr = %s and username=%s',
+                        (attempt_time, attempts, block_time, block_num, user_ip,username))
+                else:
+                    block_time = 30
+                    block_num = 0
+                    attempts = 1
+                    cursor.execute(
+                        'INSERT INTO failed_login_attempts (ip_addr, username,attempt_time, attempts, block_time, block_num) VALUES (%s,%s, %s, %s, %s, %s)',
+                        (user_ip,username,attempt_time, attempts, block_time, block_num))
+                mysql.connection.commit()
+                cursor.close()
+
+        else:
+            msg = 'Incorrect username/password!'
+
+    return render_template('login.html', msg=msg, form=login_form)
 
 @app.route('/logout')
 @login_required
@@ -742,99 +745,99 @@ def admin_register():
         return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
 
-@app.route('/verify_phone_otp', methods=['GET','POST'])
-@login_required
-def verify_phone_otp():
-    msg = ''
-    if 'loggedin' not in session:
-          return redirect(url_for('login'))
-    if 'verify' == False:
-         print("CAPTCHA verification is required")
-         return redirect(url_for('login'))
-    otp_form = OTPVerifyForm(request.form)
-    if request.method == 'POST':
-        if request.form['resend_otp']:
-            resend_otp()
-        if request.form['confirm_phone_otp']:
-            confirm_phone_otp()
-    session['otp_verified'] = False
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-
-    if account:
-          phone_number = account['phone_number']
-          totp_key = account['totp_key']
-          if totp_key:
-              otp = verification_code(phone_number, totp_key)
-              if otp:
-                  session['phone_number'] = phone_number
-                  session['otp'] = otp
-                  session['otp_timestamp'] = time.time()
-              else:
-                print('Error in sending OTP')
-    else:
-          print('Error in finding phone_number')
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
-
-@app.route('/confirm_phone_otp', methods=['GET','POST'])
-@login_required
-def confirm_phone_otp():
-    otp_form = OTPVerifyForm(request.form)
-    entered_otp = request.form['otp']
-    print(session['otp'])
-    otp_time = session['otp_timestamp']
-    current_time = time.time()
-
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-    if account:
-        totp_key = account['totp_key']
-        if totp_key:
-            otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
-            if entered_otp == session['otp']:
-                if not otp_expired:
-                    session['otp_verified'] = True
-                    if session['role'] == 'admin' or session['role'] == 'super_admin':
-                        msg = 'Success!'
-                        return redirect(url_for('admin_home', msg=msg))
-                    else:
-                        msg = 'You have successfully logged in'
-                        return redirect(url_for('home', msg=msg))
-                else:
-                    msg = 'OTP has expired.\n Please request a new OTP and try again'
-            else:
-                msg = 'Incorrect. Please try again'
-        else:
-            msg = 'Error in finding TOTP Secret Key'
-    else:
-        msg = 'Error in finding phone number'
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
-@app.route('/resend_otp', methods=['GET','POST'])
-@login_required
-def resend_otp():
-    otp_form = OTPVerifyForm(request.form)
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-    if account:
-        phone_number = account['phone_number']
-        totp_key = account['totp_key']
-        otp = verification_code(phone_number, totp_key)
-        if otp:
-            session['phone_number'] = phone_number
-            session['otp'] = otp
-            session['otp_timestamp'] = time.time()
-            msg = 'OTP has been resent. Please try again'
-        else:
-            msg = 'Error in sending OTP'
-    else:
-        msg= 'Error in finding phone_number'
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+# @app.route('/verify_phone_otp', methods=['GET','POST'])
+# @login_required
+# def verify_phone_otp():
+#     msg = ''
+#     if 'loggedin' not in session:
+#           return redirect(url_for('login'))
+#     if 'verify' == False:
+#          print("CAPTCHA verification is required")
+#          return redirect(url_for('login'))
+#     otp_form = OTPVerifyForm(request.form)
+#     if request.method == 'POST':
+#         if request.form['resend_otp']:
+#             resend_otp()
+#         if request.form['confirm_phone_otp']:
+#             confirm_phone_otp()
+#     session['otp_verified'] = False
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#
+#     if account:
+#           phone_number = account['phone_number']
+#           totp_key = account['totp_key']
+#           if totp_key:
+#               otp = verification_code(phone_number, totp_key)
+#               if otp:
+#                   session['phone_number'] = phone_number
+#                   session['otp'] = otp
+#                   session['otp_timestamp'] = time.time()
+#               else:
+#                 print('Error in sending OTP')
+#     else:
+#           print('Error in finding phone_number')
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+#
+# @app.route('/confirm_phone_otp', methods=['GET','POST'])
+# @login_required
+# def confirm_phone_otp():
+#     otp_form = OTPVerifyForm(request.form)
+#     entered_otp = request.form['otp']
+#     print(session['otp'])
+#     otp_time = session['otp_timestamp']
+#     current_time = time.time()
+#
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#     if account:
+#         totp_key = account['totp_key']
+#         if totp_key:
+#             otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
+#             if entered_otp == session['otp']:
+#                 if not otp_expired:
+#                     session['otp_verified'] = True
+#                     if session['role'] == 'admin' or session['role'] == 'super_admin':
+#                         msg = 'Success!'
+#                         return redirect(url_for('admin_home', msg=msg))
+#                     else:
+#                         msg = 'You have successfully logged in'
+#                         return redirect(url_for('home', msg=msg))
+#                 else:
+#                     msg = 'OTP has expired.\n Please request a new OTP and try again'
+#             else:
+#                 msg = 'Incorrect. Please try again'
+#         else:
+#             msg = 'Error in finding TOTP Secret Key'
+#     else:
+#         msg = 'Error in finding phone number'
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+# @app.route('/resend_otp', methods=['GET','POST'])
+# @login_required
+# def resend_otp():
+#     otp_form = OTPVerifyForm(request.form)
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#     if account:
+#         phone_number = account['phone_number']
+#         totp_key = account['totp_key']
+#         otp = verification_code(phone_number, totp_key)
+#         if otp:
+#             session['phone_number'] = phone_number
+#             session['otp'] = otp
+#             session['otp_timestamp'] = time.time()
+#             msg = 'OTP has been resent. Please try again'
+#         else:
+#             msg = 'Error in sending OTP'
+#     else:
+#         msg= 'Error in finding phone_number'
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/webapp/home')
 @login_required

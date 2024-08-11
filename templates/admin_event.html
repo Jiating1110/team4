@@ -9,7 +9,7 @@
     }
 </style>
 <div class="event-container">
-    <form class="event-form" method="POST" action="{{ url_for('create_event') }}">
+    <form class="event-form" method="POST" action="{{ url_for('create_event') }}" enctype="multipart/form-data">
         <label for="event-name">Event Title</label>
         <input type="text" id="event-name" name="title" required>
 
