@@ -18,11 +18,9 @@ from datetime import date, timedelta, datetime
 
 import stripe
 
-
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify
 from flask_limiter import Limiter
-
 
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -32,6 +30,11 @@ bcrypt = Bcrypt()  # initializing the blender
 
 from cryptography.fernet import Fernet
 from functools import wraps
+from twilio.rest import Client
+from werkzeug.utils import secure_filename
+import random
+import pyotp
+import time
 
 import re
 
@@ -73,8 +76,13 @@ mail = Mail(app)
 
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
+app.config['RECAPTCHA_PUBLIC_KEY'] = '6LeaSwUqAAAAAJQ-YP7y_seOSo9YvqjdPAzxEWzy'
+app.config['RECAPTCHA_PRIVATE_KEY'] = '6LeaSwUqAAAAALrtgi3HJTwYRQsrOsfbmU_LjgQF'
+app.config['UPLOAD_FOLDER'] = 'secure_uploads/'
+app.config['MAX_CONTENT_LENGTH'] = 800*1024
+extensions_allowed = {'pdf', 'jpg', 'jpeg', 'png'}
 
-aaaa=0
+
 def get_session_username():
     # Default to 'anonymous' if the user is not logged in
     return session.get('username', 'anonymous')
@@ -104,10 +112,7 @@ def login_required(f):
         else:
             flash('You need to login first')
             return redirect(url_for('login'))
-
     return wrap
-
-
 def super_admin():
     if 'role' in session and session['role'] == 'super_admin':
         return True
@@ -122,9 +127,44 @@ def admin_required(func):
         else:
             flash('Unauthorised Access! Only admins can access this page')
             return redirect(url_for('login'))
-
     return wrapper
 
+#amd
+def generate_totp_key():
+    return pyotp.random_base32()
+def generate_totp_token(secret):
+    totp_key = pyotp.TOTP(secret, interval=30)
+    return totp_key.now()
+
+def verification_code(phone_number, totp_key):
+    if 'loggedin' in session:
+        username = session['username']
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT phone_number FROM accounts WHERE username = %s', (username,))
+        account = cursor.fetchone()
+
+        if account:
+            otp = generate_totp_token(totp_key)
+            print(otp)
+            session['otp'] = otp
+
+            account_sid = 'AC7a1d687ad3fe859ad6636ed450197fea'
+            auth_token = 'e617c93c6aded91e0c11de0b3e5c228c'
+            client = Client(account_sid, auth_token)
+            message = client.messages.create(
+                    body=f'Time-Based OTP verification code: {otp} ',
+                    from_='+19787552616',  # Your Twilio Singapore number
+                    to=phone_number      # Recipient’s Singapore phone number
+                )
+            if message.status == "queued" or message.status == 'sent':
+                print("Message sent successfully.")
+                return otp
+            else:
+                print(f"Message failed with error")
+                return None
+        else:
+            print('Error in finding phone_number')
+            return None
 
 def session_timeout_required(f):
     @wraps(f)
@@ -319,7 +359,6 @@ def login():
 
         if account:
             user_hashpwd = account['password']
-
             if bcrypt.check_password_hash(user_hashpwd, password):
                 if not account['is_verified']:
                     flash('Please verify your email address before logging in.', 'warning')
@@ -330,6 +369,22 @@ def login():
                 session['username'] = account['username']
                 session['role'] = account['role']
                 session['session_time'] = int(time.time())
+
+                encrypted_email = account['email'].encode()
+                key_file_name = f"{username}_symmetric.key"
+                if not os.path.exists(key_file_name):
+                    return "Symmetric key file not found."
+
+                # Open and read the symmetric key file
+                file = open(key_file_name, 'rb')
+                key = file.read()
+                file.close()
+                # Load he Symmetric key
+                f = Fernet(key)
+
+                # Decrypt the Encrypted Email address
+                decrypted_email = f.decrypt(encrypted_email)
+                email = decrypted_email.decode()
 
 
                 last_pwd_change=account['last_pwd_change']
@@ -344,12 +399,14 @@ def login():
                     if account['role']=='admin' or account['role']=='super_admin':
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        return redirect(url_for('admin_home'))
+                        return redirect(url_for('verify_otp'))
+
                     else:
                         flash('You successfully log in ')
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        return redirect(url_for('home'))
+                        return redirect(url_for('verify_otp'))
+
 
             else:
                 msg = 'Incorrect username/password!'
@@ -417,6 +474,7 @@ def logout():
 @app.route('/webapp/register', methods=['GET', 'POST'])
 def register():
     msg = ''
+    mssg = ''
     register_form = RegisterForm(request.form)
     otp_sent = False
 
