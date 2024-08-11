@@ -1,4 +1,5 @@
 import os
+import random
 
 import pathlib
 from google.oauth2 import id_token
@@ -7,32 +8,33 @@ from pip._vendor import cachecontrol
 import google.auth.transport.requests
 import requests
 import secrets
-from flask_mail import Mail
+from flask_mail import Mail, Message
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import jwt
 import time
-from datetime import date,timedelta,datetime
+from datetime import date, timedelta, datetime
 
 import stripe
+
 
 from Forms import RegisterForm,LoginForm,UpdateProfileForm,VerifyPassword,VerifyEmail,ChangePassword
 from flask import Flask, render_template, request, redirect, url_for, session,flash,abort,jsonify
 from flask_limiter import Limiter
-# from flask_limiter.util import get_remote_address
+
 
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
-from flask_bcrypt import Bcrypt   #buy the blender
-bcrypt = Bcrypt()   #initializing the blender
+from flask_bcrypt import Bcrypt  # buy the blender
+
+bcrypt = Bcrypt()  # initializing the blender
 
 from cryptography.fernet import Fernet
 from functools import wraps
 
-
-
 import re
+
 app = Flask(__name__)
 # Change this to your secret key (can be anything, it's for extra protection)
 app.secret_key = 'your secret key'
@@ -43,19 +45,20 @@ app.config['MYSQL_USER'] = 'root'
 # Lab computers use the root password `mysql`
 app.config['MYSQL_PASSWORD'] = 'mysql'
 app.config['MYSQL_DB'] = 'pythonlogin'
-#DO NOTE THAT THE MYSQL SERVER INSTANCE IN THE LAB IS RUNNING ON PORT 3360.
-#Please make necessary change to the above MYSQL_PORT config
+# DO NOTE THAT THE MYSQL SERVER INSTANCE IN THE LAB IS RUNNING ON PORT 3360.
+# Please make necessary change to the above MYSQL_PORT config
 app.config['MYSQL_PORT'] = 3306
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=30)
 # Intialize MySQL
 mysql = MySQL(app)
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-google_client_id="494648185587-331iamoak392u2o7bl1h2ornokj4qmse.apps.googleusercontent.com"
-client_secrets_file=os.path.join(pathlib.Path(__file__).parent,"client_secret.json")
+google_client_id = "494648185587-331iamoak392u2o7bl1h2ornokj4qmse.apps.googleusercontent.com"
+client_secrets_file = os.path.join(pathlib.Path(__file__).parent, "client_secret.json")
 flow = Flow.from_client_secrets_file(
     client_secrets_file=client_secrets_file,
-    scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email", "openid"],
+    scopes=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email",
+            "openid"],
     redirect_uri="http://127.0.0.1:5000/callback"
 )
 
@@ -71,6 +74,7 @@ mail = Mail(app)
 # Stripe secret key
 stripe.api_key = 'sk_test_51PZuEKCYAKRWJ1BCjBB79DUIVW2tKvR7cqCtcSb2rvJn2aN0enF4PrXZjXmrewiBJVlSKbrOwxUo6yiYVteEFy4700JG6HFGzD'
 
+
 def get_session_username():
     # Default to 'anonymous' if the user is not logged in
     return session.get('username', 'anonymous')
@@ -82,6 +86,7 @@ def rate_limit_error(e):
     flash('You have reached the maximum number of allowed requests for today. Please try again tomorrow')
     return redirect(url_for('profile'))
 #determine action based on sesion state
+
 @app.before_request
 def log_session():
     if 'username' in session:
@@ -89,20 +94,26 @@ def log_session():
         username = session.get('username')
         action = 'login' if 'loggedin' in session else 'timeout'  # Determine action based on session state
         log_session_activity(user_id, username, action)
+
+
 def login_required(f):
     @wraps(f)
-    def wrap(*args,**kwargs):
+    def wrap(*args, **kwargs):
         if 'loggedin' in session:
-            return f(*args,**kwargs)
+            return f(*args, **kwargs)
         else:
             flash('You need to login first')
             return redirect(url_for('login'))
+
     return wrap
+
 
 def super_admin():
     if 'role' in session and session['role'] == 'super_admin':
         return True
     return False
+
+
 def admin_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -111,7 +122,9 @@ def admin_required(func):
         else:
             flash('Unauthorised Access! Only admins can access this page')
             return redirect(url_for('login'))
+
     return wrapper
+
 
 def session_timeout_required(f):
     @wraps(f)
@@ -127,21 +140,26 @@ def session_timeout_required(f):
         else:
             return redirect(url_for('logout'))
         return f(*args, **kwargs)
+
     return decorated_func
 
 
 def save_event(title, description, date, image_url):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)', (title, description, date, image_url))
+    cursor.execute('INSERT INTO events (title, description, date, image_url) VALUES (%s, %s, %s, %s)',
+                   (title, description, date, image_url))
     mysql.connection.commit()
     cursor.close()
+
+
 def load_events():
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute('SELECT * FROM events')
     events = cursor.fetchall()
     cursor.close()
     return events
-  
+
+
 def generate_random_password(length=12):
     """Generate a random password with the specified length."""
     alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_+="
@@ -155,11 +173,12 @@ def google_login():
     session["state"] = state
     return redirect(authorization_url)
 
+
 @app.route("/callback")
 def callback():
     try:
         flow.fetch_token(authorization_response=request.url)
-    except :
+    except:
         print("Access denied error")
         flash("Failed to login with Google")
         return redirect(url_for('login'))
@@ -180,8 +199,8 @@ def callback():
 
     session["google_id"] = id_info.get("sub")
     session["name"] = id_info.get("name")
-    session['email']=id_info.get("email")
-    print('google try',session["google_id"],session["name"],session['email'])
+    session['email'] = id_info.get("email")
+    print('google try', session["google_id"], session["name"], session['email'])
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     # cursor.execute('SELECT google_id FROM accounts ')
@@ -190,17 +209,18 @@ def callback():
 
     if account is None:
         # no account in database
-        role='customer'
-        username=session['name']
-        pwd_type='random'
-        password=generate_random_password()
-        hashpwd=bcrypt.generate_password_hash(password)
+        role = 'customer'
+        username = session['name']
+        pwd_type = 'random'
+        password = generate_random_password()
+        hashpwd = bcrypt.generate_password_hash(password)
         email = session['email']
-        google_id=session['google_id']
-        last_pwd_change=date.today()
+        google_id = session['google_id']
+        last_pwd_change = date.today()
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',(role, username, pwd_type,hashpwd,last_pwd_change,email,google_id,))
+        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',
+                       (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
         mysql.connection.commit()
         print('google create acc,successfully')
 
@@ -210,15 +230,16 @@ def callback():
         session['role'] = 'customer'
         session['session_time'] = int(time.time())
     else:
-        #if database have account
+        # if database have account
 
-        session['loggedin']=True
-        session['id']=account['id']
-        session['username']=account['username']
+        session['loggedin'] = True
+        session['id'] = account['id']
+        session['username'] = account['username']
         session['role'] = 'customer'
         session['session_time'] = int(time.time())
 
     return redirect(url_for('home'))
+
 
 def log_session_activity(user_id, username, action):
     with mysql.connection.cursor() as cursor:
@@ -226,6 +247,7 @@ def log_session_activity(user_id, username, action):
         cursor.execute('INSERT INTO session_logs (user_id, username, action, timestamp) VALUES (%s, %s, %s, %s)',
                        (user_id, username, action, timestamp))
         mysql.connection.commit()
+
 
 @app.route('/extend_session', methods=['POST'])
 def extend_session():
@@ -278,20 +300,23 @@ def reset_failed_attempts(ip_addr):
     mysql.connection.commit()
     cursor.close()
 
-elle=0
+
 MAX_ATTEMPTS = 3
+
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
     msg = ''
+
     login_form=LoginForm(request.form)
 
+
     if request.method == 'POST' and login_form.validate():
-        username=login_form.username.data
-        password=login_form.password.data
-        print(password)
+        username = login_form.username.data
+        password = login_form.password.data
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
 
         user_ip = request.remote_addr
 
@@ -334,21 +359,30 @@ def login():
         # Fetch one record and return result
         account = cursor.fetchone() #if account dont exist in db, return 0
 
+
         if account:
             user_hashpwd = account['password']
-            if account and bcrypt.check_password_hash(user_hashpwd, password):
+
+            if bcrypt.check_password_hash(user_hashpwd, password):
+                if not account['is_verified']:
+                    flash('Please verify your email address before logging in.', 'warning')
+                    return redirect(url_for('login'))
+
                 session['loggedin'] = True
                 session['id'] = account['id']
                 session['username'] = account['username']
-                session['role']=account['role']
+                session['role'] = account['role']
                 session['session_time'] = int(time.time())
+
 
                 last_pwd_change=account['last_pwd_change']
                 date_difference=date.today()-last_pwd_change
                 print('login check date difference',date_difference)
+
                 if date_difference >= timedelta(days=3):
-                    flash('Your Password Already 3 days.Please change your password')
+                    flash('Your password is older than 3 days. Please change your password.')
                     return redirect(url_for('change_password'))
+
                 else:
                     if account['role']=='admin' or account['role']=='super_admin':
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
@@ -359,6 +393,7 @@ def login():
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
                         return redirect(url_for('home'))
+
             else:
                 msg = 'Incorrect username/password!'
                 print('fail')
@@ -401,7 +436,7 @@ def login():
         else:
             msg = 'Incorrect username/password!'
 
-    return render_template('login.html', msg=msg,form=login_form)
+    return render_template('login.html', msg=msg, form=login_form)
 
 
 
@@ -409,10 +444,10 @@ def login():
 @login_required
 def logout():
     if 'loggedin' in session:
-        user_id=session['id']
-        username=session['username']
-        role=session['role']
-        if role=='admin' or role=='super_admin':
+        user_id = session['id']
+        username = session['username']
+        role = session['role']
+        if role == 'admin' or role == 'super_admin':
             log_session_activity(user_id, username, 'admin_logout')
         else:
             log_session_activity(user_id, username, 'customer_logout')
@@ -423,48 +458,69 @@ def logout():
 
     return redirect(url_for('login'))
 
+
 @app.route('/webapp/register', methods=['GET', 'POST'])
 def register():
     msg = ''
-    register_form=RegisterForm(request.form)
-    if request.method == 'POST' and register_form.validate():
-        username=register_form.username.data
-        password=register_form.password.data
-        email=register_form.email.data
-        role='customer'
-        pwd_type='user'
-        google_id='Null'
-        last_pwd_change=date.today()
-        hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
+    register_form = RegisterForm(request.form)
+    otp_sent = False
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s ', (username,))
-        account=cursor.fetchone()
-        if account:
-            if account['username']==username:
-                flash('This username or email is already in use. Please choose a different one')
-                return render_template('register.html', msg=msg, form=register_form)
 
-        user_file = f"{username}_pwd"
-        try:
-            file=open(user_file,'w')
-            file.write("{}\n".format(hashpwd))
-            print(f"Hashed password successfully written to {user_file}")
-        except Exception as e:
-            print(f"Error writing hashed password to file: {e}")
+    if request.method == 'POST':
+        if 'send_otp' in request.form:  # If OTP send button is clicked
+            email = register_form.email.data
+            otp = str(random.randint(100000, 999999))
 
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            # Send OTP email
+            send_otp_email(email, otp)
+            msg = 'OTP has been sent to your email address.'
+            otp_sent = True
 
-        cursor.execute(
-            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-            (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id))
+        elif 'register' in request.form and register_form.validate():
+            otp_verified = request.form.get('otp_verified') == 'true'
 
-        cursor.execute('INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)', (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id))
+            if otp_verified:
+                username = register_form.username.data
+                password = register_form.password.data
+                email = register_form.email.data
 
-        mysql.connection.commit()
-        msg = 'You have successfully registered!'
+                role = 'customer'
+                pwd_type = 'user'
+                google_id = 'Null'
+                last_pwd_change = date.today()
+                hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
-    return render_template('register.html', msg=msg,form=register_form)
+                cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+                cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+                account = cursor.fetchone()
+
+                if account:
+                    if account['username'] == username:
+                        flash('Username has been taken. Please choose a different username')
+                        return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+                user_file = f"{username}_pwd"
+                  try:
+                      file=open(user_file,'w')
+                      file.write("{}\n".format(hashpwd))
+                      print(f"Hashed password successfully written to {user_file}")
+                  except Exception as e:
+                      print(f"Error writing hashed password to file: {e}")
+
+                # Insert user into database
+                cursor.execute(
+                    'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id, is_verified, verification_token) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                    (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id, True, None))
+                mysql.connection.commit()
+
+                msg = 'You have successfully registered!'
+            else:
+                flash('Please verify your OTP before registering.')
+                return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+
+    return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
+
+
+
 @app.route('/webapp/admin/register', methods=['GET', 'POST'])
 @admin_required
 @login_required
@@ -493,7 +549,7 @@ def admin_register():
                 if account['username'] == username:
                     msg = 'Username has been taken. Please choose a different username'
 
-                return render_template('admin_register.html', msg=msg,form=register_form)
+                return render_template('admin_register.html', msg=msg, form=register_form)
             else:
                 # Account doesnt exists and the form data is valid, now insert new account into accounts table
                 hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -507,17 +563,19 @@ def admin_register():
                     print(f"Error writing hashed password to file: {e}")
 
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s)',(role, username, pwd_type, hashpwd,last_pwd_change, email, google_id,))
+                cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s, %s, %s,%s, %s)',
+                               (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
-                return render_template('admin_home.html', msg=msg,username=session['username'])
-        elif request.method == 'POST': #verify if theres an input
+                return render_template('admin_home.html', msg=msg, username=session['username'])
+        elif request.method == 'POST':  # verify if theres an input
             # Form is empty... (no POST data)
             msg = 'Please fill out the form!'
             # Show registration form with message (if any)
-        return render_template('admin_register.html', msg=msg,form=register_form)
+        return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
+
 
 @app.route('/webapp/home')
 @login_required
@@ -527,18 +585,19 @@ def home():
         print(session['session_time'])
         return render_template('home.html', username=session['username'])
     return redirect(url_for('login'))
+
+
 @app.route('/webapp/admin/home')
 @admin_required
 @login_required
 @session_timeout_required
 def admin_home():
     if 'loggedin' in session:
-
         return render_template('admin_home.html', username=session['username'])
     return redirect(url_for('login'))
 
 
-@app.route('/webapp/profile',methods=['GET','POST'])
+@app.route('/webapp/profile', methods=['GET', 'POST'])
 @login_required
 @session_timeout_required
 def profile():
@@ -548,7 +607,9 @@ def profile():
         account = cursor.fetchone()
         return render_template('profile.html', account=account)
     return redirect(url_for('login'))
-@app.route('/webapp/admin/profile',methods=['GET','POST'])
+
+
+@app.route('/webapp/admin/profile', methods=['GET', 'POST'])
 @admin_required
 @login_required
 @session_timeout_required
@@ -561,21 +622,23 @@ def admin_profile():
         return render_template('admin_profile.html', account=account)
     return redirect(url_for('login'))
 
-@app.route('/webapp/profile/update',methods=['GET','POST'])
+
+@app.route('/webapp/profile/update', methods=['GET', 'POST'])
 @login_required
 @session_timeout_required
 def update_profile():
     if 'loggedin' in session:
-        msg=' '
-        update_profile_form=UpdateProfileForm(request.form)
-        if request.method=='POST' and update_profile_form.validate():
-            new_username=update_profile_form.username.data
-            email=update_profile_form.email.data
+        msg = ' '
+        update_profile_form = UpdateProfileForm(request.form)
+        if request.method == 'POST' and update_profile_form.validate():
+            new_username = update_profile_form.username.data
+            email = update_profile_form.email.data
 
             #current_user info
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
+
 
             current_username=account['username']
 
@@ -589,11 +652,12 @@ def update_profile():
 
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-            cursor.execute('UPDATE accounts SET username = %s,email=%s WHERE id = %s', (new_username,email, session['id']))
+            cursor.execute('UPDATE accounts SET username = %s,email=%s WHERE id = %s',
+                           (new_username, email, session['id']))
             mysql.connection.commit()
 
-            msg='You have successfully update!'
-            if account['role'] == 'admin' or account['role']=='super_admin':
+            msg = 'You have successfully update!'
+            if account['role'] == 'admin' or account['role'] == 'super_admin':
                 return redirect(url_for('admin_profile'))
             else:
                 return redirect(url_for('profile'))
@@ -601,29 +665,31 @@ def update_profile():
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             id = session['id']
             cursor.execute('SELECT * FROM accounts WHERE id = %s ', (id,))
-            account=cursor.fetchone()
-            email=account['email']
+            account = cursor.fetchone()
+            email = account['email']
 
-            update_profile_form.username.data=account['username']
-            update_profile_form.email.data=email
-            return render_template('update_profile.html',msg=msg,form=update_profile_form,account=account)
+            update_profile_form.username.data = account['username']
+            update_profile_form.email.data = email
+            return render_template('update_profile.html', msg=msg, form=update_profile_form, account=account)
     return redirect(url_for('login'))
 
 
-
-def get_reset_token(user,expires=200):
+def get_reset_token(user, expires=200):
     try:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT username FROM accounts WHERE email = %s', (user,))
         account = cursor.fetchone()
-        username=account['username']
+        username = account['username']
         if not account:
             return None
-        token=jwt.encode({'reset_password':username,'exp':time.time()+expires},key=app.secret_key,algorithm='HS256')
+        token = jwt.encode({'reset_password': username, 'exp': time.time() + expires}, key=app.secret_key,
+                           algorithm='HS256')
         return token
     except Exception as e:
         print(f"Errorbbbb: {e}")
         return None
+
+
 def verify_reset_token(token):
     try:
         decoded_token = jwt.decode(token, key=app.secret_key, algorithms=['HS256'])
@@ -645,12 +711,14 @@ def verify_reset_token(token):
     except Exception as e:
         print(f"Error: {e}")
         return None
+
+
 def send_mail(user):
     msg = MIMEMultipart()
     msg['From'] = os.getenv('345ting678ting@gmail.com')
     msg['To'] = user
     msg['Subject'] = 'Change Password'
-    token=get_reset_token(user)
+    token = get_reset_token(user)
     reset_url = url_for('reset_password', token=token, _external=True)
     body = f"""To change your password, please follow the link below:
     {reset_url}
@@ -658,13 +726,14 @@ def send_mail(user):
     If you didn't send a password reset request, please ignore this message."""
     msg.attach(MIMEText(body, 'plain'))
 
-    server = smtplib.SMTP(app.config['MAIL_SERVER'] ,app.config['MAIL_PORT'])
+    server = smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT'])
     server.starttls()
-    server.login(app.config['MAIL_USERNAME'],app.config['MAIL_PASSWORD'])
+    server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
     server.sendmail(app.config['MAIL_USERNAME'], msg['To'], msg.as_string())
     server.quit()
 
     print('Email sent successfully.')
+
 
 @app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
@@ -675,6 +744,7 @@ def reset_password(token):
         return redirect(url_for('reset_request'))
     pwd_form=ChangePassword(request.form)
     email=user['email']
+
     if request.method == 'POST' and pwd_form.validate():
         newpwd = pwd_form.newpwd.data
         confirm_password = pwd_form.confirmpwd.data
@@ -682,7 +752,7 @@ def reset_password(token):
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE pwd_type = %s', (user['pwd_type'],))
         account = cursor.fetchone()
-        username=account['username']
+        username = account['username']
         if newpwd == confirm_password:
             hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
 
@@ -699,38 +769,40 @@ def reset_password(token):
             account = cursor.fetchone()
             if account['pwd_type'] == 'random':
                 pwd_type = 'user'
-                cursor.execute('UPDATE accounts SET password = %s, pwd_type=%s  WHERE username = %s', (hashpwd,pwd_type,user['username']))
+                cursor.execute('UPDATE accounts SET password = %s, pwd_type=%s  WHERE username = %s',
+                               (hashpwd, pwd_type, user['username']))
                 mysql.connection.commit()
-                print( 'You have successfully update!')
-                return render_template('reset_pwd_successfully.html',email=email)
+                print('You have successfully update!')
+                return render_template('reset_pwd_successfully.html', email=email)
             else:
-                cursor.execute('UPDATE accounts SET password = %s WHERE username = %s',(hashpwd, user['username']))
+                cursor.execute('UPDATE accounts SET password = %s WHERE username = %s', (hashpwd, user['username']))
                 mysql.connection.commit()
         else:
             msg = 'Password didnt match.Pls try again'
     return render_template('change_pwd.html', form=pwd_form)
 
 
-@app.route('/webapp/reset_request',methods=['GET','POST'])
+@app.route('/webapp/reset_request', methods=['GET', 'POST'])
 def reset_request():
     msg=''
     verify_form=VerifyEmail(request.form)
     if request.method=='POST' and verify_form.validate():
         email=verify_form.email.data
+
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE email = %s', (email,))
         account = cursor.fetchone()
         if account:
             database_email = account['email']
-            if email==database_email:
+            if email == database_email:
                 send_mail(email)
-                return render_template('reset_pwd.html',email=email)
+                return render_template('reset_pwd.html', email=email)
         else:
-            msg='Incorrect email'
-    return render_template('verify_email.html',form=verify_form,msg=msg)
+            msg = 'Incorrect email'
+    return render_template('verify_email.html', form=verify_form, msg=msg)
 
 
-@app.route('/webapp/verify_type',methods=['GET','POST'])
+@app.route('/webapp/verify_type', methods=['GET', 'POST'])
 @login_required
 @limiter.limit('2 per day')
 def verify_type():
@@ -741,27 +813,29 @@ def verify_type():
         return render_template('verify_type.html')
     return redirect(url_for('login'))
 
-@app.route('/webapp/verify/password',methods=['GET','POST'])
+
+@app.route('/webapp/verify/password', methods=['GET', 'POST'])
 @login_required
 def verify_password():
-    msg=''
+    msg = ''
     if 'loggedin' in session:
-        verify_form=VerifyPassword(request.form)
-        if request.method=='POST' and verify_form.validate():
-            pwd=verify_form.pwd.data
+        verify_form = VerifyPassword(request.form)
+        if request.method == 'POST' and verify_form.validate():
+            pwd = verify_form.pwd.data
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
-            user_hashpwd=account['password']
-            print('verify pwd',user_hashpwd)
+            user_hashpwd = account['password']
+            print('verify pwd', user_hashpwd)
 
-            if account and bcrypt.check_password_hash(user_hashpwd,pwd):
+            if account and bcrypt.check_password_hash(user_hashpwd, pwd):
                 return redirect(url_for('change_password'))
             else:
-                msg='Incorrect password'
-        return render_template('verify_pwd.html',form=verify_form,msg=msg)
+                msg = 'Incorrect password'
+        return render_template('verify_pwd.html', form=verify_form, msg=msg)
     return redirect(url_for('login'))
+
 
 
 def send_confirm_mail(email,username):
@@ -787,40 +861,43 @@ def send_confirm_mail(email,username):
 
     print('Email sent successfully.')
 @app.route('/webapp/profile/change_passowrd',methods=['GET','POST'])
+
 @login_required
 @session_timeout_required
 
 def change_password():
     if 'loggedin' in session:
         print('hhh')
-        msg=' '
-        pwd_form=ChangePassword(request.form)
-        if request.method=='POST' and pwd_form.validate():
-            newpwd=pwd_form.newpwd.data
-            confirm_password=pwd_form.confirmpwd.data
+        msg = ' '
+        pwd_form = ChangePassword(request.form)
+        if request.method == 'POST' and pwd_form.validate():
+            newpwd = pwd_form.newpwd.data
+            confirm_password = pwd_form.confirmpwd.data
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
+            
             username=account['username']
             role=account['role']
             email=account['email']
 
-            if newpwd==confirm_password:
+
+            if newpwd == confirm_password:
                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
 
                 user_file = f"{username}_pwd"
-                #check pwd history
+                # check pwd history
                 try:
-                    file=open(user_file,'r+')
-                    pwd_history=file.readlines()
+                    file = open(user_file, 'r+')
+                    pwd_history = file.readlines()
                     pwd_history = [pwd.strip() for pwd in pwd_history]
 
                     for old_pwd in pwd_history:
-                        if bcrypt.check_password_hash(old_pwd,newpwd):
+                        if bcrypt.check_password_hash(old_pwd, newpwd):
                             flash('New password cannot be one of the previosly used passwords')
                             return redirect(url_for('change_password'))
-                    if len(pwd_history)>=3:
+                    if len(pwd_history) >= 3:
                         pwd_history = pwd_history[1:]
                     pwd_history.append(hashpwd)
                     print('change pwd line', pwd_history)
@@ -832,18 +909,22 @@ def change_password():
                     file = open(user_file, 'w')
                     file.write("{}\n".format(hashpwd))
 
-                last_pwd_change=date.today()
+                last_pwd_change = date.today()
                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-                cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s', (hashpwd,last_pwd_change,session['id']))
+                cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s',
+                               (hashpwd, last_pwd_change, session['id']))
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
+
                 send_confirm_mail(email,username)
                 return render_template('change_pwd_successfully.html',username=username,role=role)
 
+
             else:
-                msg='Password didnt match.Pls try again'
-        return render_template('change_pwd.html',form=pwd_form,msg=msg)
+                msg = 'Password didnt match.Pls try again'
+        return render_template('change_pwd.html', form=pwd_form, msg=msg)
     return redirect(url_for('login'))
+
 
 @app.route('/webapp/admin/retrieve_users')
 @admin_required
@@ -864,16 +945,19 @@ def retrieve_users():
         # User is not loggedin redirect to login page
     return redirect(url_for('login'))
 
+
 @app.route('/webapp/admin/event')
 @admin_required
 @login_required
 @session_timeout_required
 def admin_event():
     if 'loggedin' in session:
-        events= load_events()
+        events = load_events()
         return render_template('admin_event.html', events=events)
     return redirect(url_for('login'))
-@app.route('/webapp/admin/create_event', methods=['POST','GET'])
+
+
+@app.route('/webapp/admin/create_event', methods=['POST', 'GET'])
 @admin_required
 @login_required
 @session_timeout_required
@@ -889,6 +973,8 @@ def create_event():
         return redirect(url_for('admin_event'))
     else:
         return redirect(url_for('login'))
+
+
 @app.route('/webapp/admin/edit_event/<int:event_id>', methods=['GET', 'POST'])
 @admin_required
 @login_required
@@ -915,7 +1001,9 @@ def edit_event(event_id):
         return render_template('admin_edit_event.html', event=event)
     else:
         return redirect(url_for('login'))
-@app.route('/webapp/admin/delete_event/<event_id>', methods=['POST','GET'])
+
+
+@app.route('/webapp/admin/delete_event/<event_id>', methods=['POST', 'GET'])
 @admin_required
 @login_required
 @session_timeout_required
@@ -925,6 +1013,7 @@ def delete_event(event_id):
     mysql.connection.commit()
     cursor.close()
     return redirect(url_for('admin_event'))
+
 
 @app.route('/webapp/events')
 @login_required
@@ -949,6 +1038,7 @@ def retrieve_orders():
         cursor.close()
         return render_template('admin_order.html', orders=orders)
     return redirect(url_for('login'))
+
 
 @app.route('/webapp/register_event', methods=['POST', 'GET'])
 @login_required
@@ -995,6 +1085,7 @@ def register_event():
         return render_template('event_register.html')
     return redirect(url_for('login'))
 
+
 @app.route('/delete/<int:order_id>', methods=['POST'])
 @admin_required
 @login_required
@@ -1006,11 +1097,84 @@ def delete(order_id):
         cursor.close()
         return redirect(url_for('retrieve_orders'))
     except Exception as e:
-      return f"Error deleting order: {str(e)}"
+        return f"Error deleting order: {str(e)}"
 
 
-        
+def send_otp_email(user, otp):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = app.config['MAIL_USERNAME']
+        msg['To'] = user
+        msg['Subject'] = 'Your OTP Code'
+
+        body = f"""Your OTP code is {otp}. Please enter this code to complete the registration process."""
+        msg.attach(MIMEText(body, 'plain'))
+
+        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
+            server.starttls()
+            server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+            server.sendmail(msg['From'], msg['To'], msg.as_string())
+
+        print('OTP email sent successfully.')
+
+    except Exception as e:
+        print(f"Error sending OTP email: {e}")
 
 
-if __name__== '__main__':
+@app.route('/send_otp', methods=['POST'])
+def send_otp():
+    data = request.get_json()
+    email = data.get('email')
+    if not email:
+        return jsonify({'success': False, 'message': 'Email is required'})
+
+    otp = str(random.randint(100000, 999999))
+    # Store OTP and its expiry time in session or database
+    # For simplicity, using a temporary in-memory storage
+    session['otp'] = otp
+    session['otp_expiry'] = time.time() + 60  # OTP valid for 60 seconds
+
+    send_otp_email(email, otp)
+    return jsonify({'success': True})
+
+
+@app.route('/verify_otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    otp = data.get('otp')
+    stored_otp = session.get('otp')
+    otp_expiry = session.get('otp_expiry')
+
+    print(f"Entered OTP: {otp}")  # Debug
+    print(f"Stored OTP: {stored_otp}")  # Debug
+
+    if not otp or stored_otp != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP'})
+
+    if time.time() > otp_expiry:
+        return jsonify({'success': False, 'message': 'OTP expired'})
+
+    session.pop('otp', None)  # Remove OTP from session
+    session.pop('otp_expiry', None)  # Remove OTP expiry from session
+    return jsonify({'success': True})
+
+
+@app.route('/confirm_email/<token>', methods=['GET'])
+def confirm_email(token):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM accounts WHERE verification_token = %s', (token,))
+    account = cursor.fetchone()
+
+    if account:
+        cursor.execute(
+            'UPDATE accounts SET is_verified = TRUE, verification_token = NULL WHERE verification_token = %s', (token,))
+        mysql.connection.commit()
+        flash('Your email has been verified successfully! You can now log in.')
+        return redirect(url_for('login'))
+    else:
+        flash('Invalid or expired verification link.')
+        return redirect(url_for('register'))
+
+
+if __name__ == '__main__':
     app.run(debug=True)
