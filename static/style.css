@@ -314,3 +314,6 @@ body.loggedin {
     text-align:center;
 }
 
+.register .error{
+            color:red;
+}

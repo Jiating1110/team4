@@ -62,9 +62,11 @@
 			<script>
 				function verify(){
 					if (!updatePuzzlePiecePos()) {
-						document.querySelector('.msg').textContent = "Please complete CAPTCHA";
+						document.querySelector('#mssg').textContent = "Please complete CAPTCHA";
+						mssg.className = "error";
 						return false;
 					} else{
+						document.querySelector('.mssg').textContent = '';
 						return true;
 					}
 				}
