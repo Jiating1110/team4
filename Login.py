@@ -278,7 +278,7 @@ def reset_failed_attempts(ip_addr):
     mysql.connection.commit()
     cursor.close()
 
-
+elle=0
 MAX_ATTEMPTS = 3
 
 @app.route('/', methods=['GET', 'POST'])
