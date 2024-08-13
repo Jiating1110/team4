@@ -96,7 +96,7 @@ body {
   	display: flex;
   	flex-wrap: wrap;
   	justify-content: center;
-  	padding-top: 20px;
+	padding-top: 20px;
 }
 .login form label, .register form label, .verify_otp form label {
   	display: flex;

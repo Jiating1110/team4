@@ -32,7 +32,7 @@ from flask_bcrypt import Bcrypt  # buy the blender
 bcrypt = Bcrypt()  # initializing the blender
 
 import pyotp
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet,InvalidToken
 from functools import wraps
 from twilio.rest import Client
 from werkzeug.utils import secure_filename
@@ -57,7 +57,7 @@ app.config['MYSQL_DB'] = 'pythonlogin'
 # DO NOTE THAT THE MYSQL SERVER INSTANCE IN THE LAB IS RUNNING ON PORT 3360.
 # Please make necessary change to the above MYSQL_PORT config
 app.config['MYSQL_PORT'] = 3306
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=30)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=120)
 # Intialize MySQL
 mysql = MySQL(app)
 
@@ -88,6 +88,8 @@ app.config['UPLOAD_FOLDER'] = 'secure_uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 800*1024
 extensions_allowed = {'pdf', 'jpg', 'jpeg', 'png'}
 
+def generate_totp_key():
+    return pyotp.random_base32()
 def get_session_username():
     # Default to 'anonymous' if the user is not logged in
     return session.get('username', 'anonymous')
@@ -181,7 +183,7 @@ def session_timeout_required(f):
             print(int(time.time()))
             print("Session TIme:" + str(session['session_time']))
             session_time = session['session_time']
-            if int(time.time()) - session_time > 30:
+            if int(time.time()) - session_time > 120:
                 return redirect(url_for('logout'))
             session['session_time'] = int(time.time())
         else:
@@ -264,10 +266,18 @@ def callback():
         email = session['email']
         google_id = session['google_id']
         last_pwd_change = date.today()
-
+        totp_key=generate_totp_token
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',
-                       (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
+        cursor.execute(
+            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email,phone_number, google_id, is_verified, verification_token, totp_key) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+            (role, username, pwd_type, hashpwd, last_pwd_change, email, '+6586751352', google_id, True, None,
+             totp_key)
+        )
+
+        # cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',
+        #                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
         mysql.connection.commit()
         print('google create acc,successfully')
 
@@ -301,7 +311,7 @@ def extend_session():
     session.permanent = True
     return '', 200
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 2
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -375,22 +385,22 @@ def login():
                 session['username'] = account['username']
                 session['role'] = account['role']
                 session['session_time'] = int(time.time())
-
-                encrypted_email = account['email'].encode()
-                key_file_name = f"{username}_symmetric.key"
-                if not os.path.exists(key_file_name):
-                    return "Symmetric key file not found."
-
-                # Open and read the symmetric key file
-                file = open(key_file_name, 'rb')
-                key = file.read()
-                file.close()
-                # Load he Symmetric key
-                f = Fernet(key)
-
-                # Decrypt the Encrypted Email address
-                decrypted_email = f.decrypt(encrypted_email)
-                email = decrypted_email.decode()
+                #
+                # encrypted_email = account['email'].encode()
+                # key_file_name = f"{username}_symmetric.key"
+                # if not os.path.exists(key_file_name):
+                #     return "Symmetric key file not found."
+                #
+                # # Open and read the symmetric key file
+                # file = open(key_file_name, 'rb')
+                # key = file.read()
+                # file.close()
+                # # Load he Symmetric key
+                # f = Fernet(key)
+                #
+                # # Decrypt the Encrypted Email address
+                # decrypted_email = f.decrypt(encrypted_email)
+                # email = decrypted_email.decode()
 
 
                 last_pwd_change=account['last_pwd_change']
@@ -619,6 +629,7 @@ def register():
 
         elif 'register' in request.form and register_form.validate():
             otp_verified = request.form.get('otp_verified') == 'true'
+            captcha_verified = request.form.get('verify') == 'true'
 
             if otp_verified:
                 username = register_form.username.data
@@ -644,21 +655,21 @@ def register():
                         return render_template('register.html', msg=msg, form=register_form, otp_sent=otp_sent)
 
                 #check captcha
-                if 'verify' == False:
-                    mssg = 'Please complete CAPTCHA'
-
-                key = Fernet.generate_key()
-                # Write Symmetric key to file – wb:write and close file
-                key_file_name = f"{username}_symmetric.key"
-                with open(key_file_name, "wb") as fo:
-                    fo.write(key)
-                # Initialize Fernet Class
-                f = Fernet(key)
-
-                # convert email address to bytes before saving to Database
-                email = email.encode()
-                # Encrypt email address
-                encrypted_email = f.encrypt(email)
+                if not captcha_verified:
+                    mssg = ''
+                #
+                # key = Fernet.generate_key()
+                # # Write Symmetric key to file – wb:write and close file
+                # key_file_name = f"{username}_symmetric.key"
+                # with open(key_file_name, "wb") as fo:
+                #     fo.write(key)
+                # # Initialize Fernet Class
+                # f = Fernet(key)
+                #
+                # # convert email address to bytes before saving to Database
+                # email = email.encode()
+                # # Encrypt email address
+                # encrypted_email = f.encrypt(email)
                 totp_key = generate_totp_key()
 
                 #store pwd
@@ -675,7 +686,7 @@ def register():
                 cursor.execute(
                     'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email,phone_number, google_id, is_verified, verification_token, totp_key) '
                     'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-                    (role, username, pwd_type, hashpwd, last_pwd_change,encrypted_email,'+6586751352', google_id, True, None,totp_key)
+                    (role, username, pwd_type, hashpwd, last_pwd_change,email,'+6586751352', google_id, True, None,totp_key)
                 )
 
                 mysql.connection.commit()
@@ -722,19 +733,19 @@ def admin_register():
             else:
                 hashpwd = bcrypt.generate_password_hash(password).decode('utf-8')
 
-
-                key = Fernet.generate_key()
-                # Write Symmetric key to file – wb:write and close file
-                key_file_name = f"{username}_symmetric.key"
-                with open(key_file_name, "wb") as fo:
-                    fo.write(key)
-                # Initialize Fernet Class
-                f = Fernet(key)
-
-                # convert email address to bytes before saving to Database
-                email = email.encode()
-                # Encrypt email address
-                encrypted_email = f.encrypt(email)
+                #
+                # key = Fernet.generate_key()
+                # # Write Symmetric key to file – wb:write and close file
+                # key_file_name = f"{username}_symmetric.key"
+                # with open(key_file_name, "wb") as fo:
+                #     fo.write(key)
+                # # Initialize Fernet Class
+                # f = Fernet(key)
+                #
+                # # convert email address to bytes before saving to Database
+                # email = email.encode()
+                # # Encrypt email address
+                # encrypted_email = f.encrypt(email)
                 totp_key = generate_totp_key()
 
 
@@ -752,7 +763,7 @@ def admin_register():
                 # Insert user into database
                 cursor.execute(
                     'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change,email,phone_number, google_id, is_verified, verification_token,totp_secret, totp_key) VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s,%s)',
-                    (role, username, pwd_type, hashpwd, last_pwd_change, '+6586751352', encrypted_email, google_id, True,None, totp_key,secret))
+                    (role, username, pwd_type, hashpwd, last_pwd_change, '+6586751352', email, google_id, True,None, totp_key,secret))
                 mysql.connection.commit()
 
                 msg = 'You have successfully registered!'
@@ -887,20 +898,21 @@ def profile():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
         account = cursor.fetchone()
+        email = account['email']
 
-        encrypted_email = account['email'].encode()
-        username = account['username']
-        key_file_name = f"{username}_symmetric.key"
-
-        if not os.path.exists(key_file_name):
-            return "Symmetric key file not found."
-        with open(key_file_name, 'rb') as key_file:
-            key = key_file.read()
-
-        f = Fernet(key)
-        decrypted_email = f.decrypt(encrypted_email)
-        email = decrypted_email.decode()
-
+        # # encrypted_email = account['email'].encode()
+        # # username = account['username']
+        # # key_file_name = f"{username}_symmetric.key"
+        # #
+        # # if not os.path.exists(key_file_name):
+        # #     return "Symmetric key file not found."
+        # # with open(key_file_name, 'rb') as key_file:
+        # #     key = key_file.read()
+        # #
+        # # f = Fernet(key)
+        # # decrypted_email = f.decrypt(encrypted_email)
+        # # email = decrypted_email.decode()
+        #
         # Mask the email address
         email_parts = email.split('@')
         masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
@@ -923,20 +935,21 @@ def admin_profile():
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
         account = cursor.fetchone()
+        email=account['email']
 
-        encrypted_email = account['email'].encode()
-        username = account['username']
-        key_file_name = f"{username}_symmetric.key"
-
-        if not os.path.exists(key_file_name):
-            return "Symmetric key file not found."
-        with open(key_file_name, 'rb') as key_file:
-            key = key_file.read()
-
-        f = Fernet(key)
-        decrypted_email = f.decrypt(encrypted_email)
-        email = decrypted_email.decode()
-
+        # encrypted_email = account['email'].encode()
+        # username = account['username']
+        # key_file_name = f"{username}_symmetric.key"
+        #
+        # if not os.path.exists(key_file_name):
+        #     return "Symmetric key file not found."
+        # with open(key_file_name, 'rb') as key_file:
+        #     key = key_file.read()
+        #
+        # f = Fernet(key)
+        # decrypted_email = f.decrypt(encrypted_email)
+        # email = decrypted_email.decode()
+        #
         # Mask the email address
         email_parts = email.split('@')
         masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
@@ -965,26 +978,6 @@ def update_profile():
             account = cursor.fetchone()
             current_username=account['username']
 
-            old_key_file_name = f"{current_username}_symmetric.key"
-            if not os.path.exists(old_key_file_name):
-                return "Symmetric key file not found."
-
-            new_key_file_name = f"{new_username}_symmetric.key"
-            try:
-                os.rename(old_key_file_name, new_key_file_name)
-            except Exception as e:
-                flash('Error renaming key file')
-                return redirect(url_for('update_profile'))
-
-                # Open and read the symmetric key file
-                with open(new_key_file_name, 'rb') as key_file:
-                    key = key_file.read()
-                f = Fernet(key)
-                # convert email address to bytes before saving to Database
-                email = email.encode()
-                # Encrypt email address
-                encrypted_email = f.encrypt(email)
-
             if new_username !=current_username:
                 cursor.execute('SELECT * FROM accounts WHERE username = %s', (new_username,))
                 existing_acc = cursor.fetchone()
@@ -992,11 +985,34 @@ def update_profile():
                 if existing_acc:
                     flash('This username or email is already in use. Please choose a different one')
                     return render_template('update_profile.html', msg=msg, form=update_profile_form)
+            #
+            #
+            # old_key_file_name = f"{current_username}_symmetric.key"
+            # if not os.path.exists(old_key_file_name):
+            #     return "Symmetric key file not found."
+            #
+            # new_key_file_name = f"{new_username}_symmetric.key"
+            # try:
+            #     os.rename(old_key_file_name, new_key_file_name)
+            # except Exception as e:
+            #     flash('Error renaming key file')
+            #     return redirect(url_for('update_profile'))
+            #
+            #     # Open and read the symmetric key file
+            #     with open(new_key_file_name, 'rb') as key_file:
+            #         key = key_file.read()
+            #     f = Fernet(key)
+            #     # convert email address to bytes before saving to Database
+            #     email = email.encode()
+            #     # Encrypt email address
+            #     encrypted_email = f.encrypt(email)
+
+
 
 
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('UPDATE accounts SET username = %s,email=%s WHERE id = %s',
-                           (new_username, encrypted_email, session['id']))
+                           (new_username, email, session['id']))
 
             mysql.connection.commit()
 
@@ -1009,22 +1025,22 @@ def update_profile():
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
             account = cursor.fetchone()
-
-            encrypted_email = account['email'].encode()
-            username = account['username']
-            key_file_name = f"{username}_symmetric.key"
-
-            if not os.path.exists(key_file_name):
-                return "Symmetric key file not found."
-
-            # Open and read the symmetric key file
-            with open(key_file_name, 'rb') as key_file:
-                key = key_file.read()
-
-            f = Fernet(key)
-            decrypted_email = f.decrypt(encrypted_email)
-            # account['email'] = decrypted_email.decode()
-            email = decrypted_email.decode()
+            #
+            # encrypted_email = account['email'].encode()
+            # username = account['username']
+            # key_file_name = f"{username}_symmetric.key"
+            #
+            # if not os.path.exists(key_file_name):
+            #     return "Symmetric key file not found."
+            #
+            # # Open and read the symmetric key file
+            # with open(key_file_name, 'rb') as key_file:
+            #     key = key_file.read()
+            #
+            # f = Fernet(key)
+            # decrypted_email = f.decrypt(encrypted_email)
+            # # account['email'] = decrypted_email.decode()
+            # email = decrypted_email.decode()
 
             update_profile_form.username.data = account['username']
             update_profile_form.email.data = account['email']
@@ -1134,29 +1150,30 @@ def reset_password(token):
             else:
                 cursor.execute('UPDATE accounts SET password = %s WHERE username = %s', (hashpwd, user['username']))
                 mysql.connection.commit()
+                print('You have successfully update!')
+                return render_template('reset_pwd_successfully.html', email=email)
         else:
             msg = 'Password didnt match.Pls try again'
     return render_template('change_pwd.html', form=pwd_form)
 
 
-@app.route('/webapp/reset_request', methods=['GET', 'POST'])
+@app.route('/webapp/reset_request',methods=['GET','POST'])
 def reset_request():
-    msg = ''
-    verify_form = VerifyEmail(request.form)
-    if request.method == 'POST' and verify_form.validate():
-        email = verify_form.email.data
-
+    msg=''
+    verify_form=VerifyEmail(request.form)
+    if request.method=='POST' and verify_form.validate():
+        email=verify_form.email.data
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute('SELECT * FROM accounts WHERE email = %s', (email,))
         account = cursor.fetchone()
         if account:
             database_email = account['email']
-            if email == database_email:
+            if email==database_email:
                 send_mail(email)
-                return render_template('reset_pwd.html', email=email)
+                return render_template('reset_pwd.html',email=email)
         else:
-            msg = 'Incorrect email'
-    return render_template('verify_email.html', form=verify_form, msg=msg)
+            msg='Incorrect email'
+    return render_template('verify_email.html',form=verify_form,msg=msg)
 
 
 @app.route('/webapp/verify_type', methods=['GET', 'POST'])
@@ -1236,7 +1253,9 @@ def change_password():
 
             username = account['username']
             role = account['role']
-            email = account['email']
+
+
+
 
             if newpwd == confirm_password:
                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
@@ -1271,6 +1290,22 @@ def change_password():
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
 
+                encrypted_email = account['email'].encode()
+                key_file_name = f"{username}_symmetric.key"
+                if not os.path.exists(key_file_name):
+                    return "Symmetric key file not found."
+
+                # Open and read the symmetric key file
+                file = open(key_file_name, 'rb')
+                key = file.read()
+                file.close()
+                # Load he Symmetric key
+                f = Fernet(key)
+
+                # Decrypt the Encrypted Email address
+                decrypted_email = f.decrypt(encrypted_email)
+                email = decrypted_email.decode()
+
                 send_confirm_mail(email, username)
                 return render_template('change_pwd_successfully.html', username=username, role=role)
 
@@ -1292,23 +1327,31 @@ def retrieve_users():
         cursor.execute('SELECT COUNT(*) AS users_count FROM accounts')
         count = cursor.fetchone()
         users_count = count['users_count']
+        # cursor.execute('SELECT * FROM accounts')
+        # users_info = cursor.fetchall()
         cursor.execute('SELECT username, role, email, phone_number FROM accounts')
         users_info = cursor.fetchall()
-
         for user in users_info:
-            encrypted_email = user['email'].encode()
-            username = user['username']
-            key_file_name = f"{username}_symmetric.key"
+            username=user['username']
+            email=user['email']
 
-            if not os.path.exists(key_file_name):
-                return f"Symmetric key file not found for user {username}."
 
-            with open(key_file_name, 'rb') as key_file:
-                key = key_file.read()
 
-            f = Fernet(key)
-            decrypted_email = f.decrypt(encrypted_email)
-            email = decrypted_email.decode()
+        #
+        # for user in users_info:
+        #     encrypted_email = user['email'].encode()
+        #     username = user['username']
+        #     key_file_name = f"{username}_symmetric.key"
+        #
+        #     if not os.path.exists(key_file_name):
+        #         return f"Symmetric key file not found for user {username}."
+        #
+        #     with open(key_file_name, 'rb') as key_file:
+        #         key = key_file.read()
+        #
+        #     f = Fernet(key)
+        #     decrypted_email = f.decrypt(encrypted_email)
+        #     email = decrypted_email.decode()
 
             email_parts = email.split('@')
             masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
@@ -1339,7 +1382,7 @@ def admin_event():
 
 def files_allowed(filename):
     return '.' in filename and filename.rsplit('.',1)[1].lower() in extensions_allowed
-@app.route('/secure_uploads/<filename>')
+@app.route('/uploaded_file/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
@@ -1372,7 +1415,7 @@ def create_event():
         else:
             file_url = image_url
 
-        save_event(title, description, date, image_url)
+        save_event(title, description, date, file_url)
 
         return redirect(url_for('admin_event'))
     else:

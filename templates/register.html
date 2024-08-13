@@ -109,6 +109,9 @@
                 <div class="container">
 					{% include 'captcha.html' %}
             	</div>
+                <div class="otp-status">{{ mssg }}</div>
+
+
 
                 <!-- Hidden field to store OTP verification status -->
                 <input type="hidden" name="otp_verified" value="false">
@@ -250,6 +253,10 @@
                 otpStatusElem.textContent = 'Please verify your OTP before registering.';
                 otpStatusElem.className = 'otp-status error';
                 otpStatusElem.style.display = 'block';
+            }
+            if (!verify()) {
+                event.preventDefault();
+                return;
             }
         });
     </script>
