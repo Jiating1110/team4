@@ -223,41 +223,128 @@ def google_login():
     return redirect(authorization_url)
 
 
+# @app.route("/callback")
+# def callback():
+#     try:
+#         flow.fetch_token(authorization_response=request.url)
+#     except:
+#         print("Access denied error")
+#         flash("Failed to login with Google")
+#         return redirect(url_for('login'))
+#
+#     if not session["state"] == request.args["state"]:
+#         abort(500)  # State does not match!
+#
+#     credentials = flow.credentials
+#     request_session = requests.session()
+#     cached_session = cachecontrol.CacheControl(request_session)
+#     token_request = google.auth.transport.requests.Request(session=cached_session)
+#
+#     id_info = id_token.verify_oauth2_token(
+#         id_token=credentials._id_token,
+#         request=token_request,
+#         audience=google_client_id
+#     )
+#
+#     session["google_id"] = id_info.get("sub")
+#     session["name"] = id_info.get("name")
+#     session['email'] = id_info.get("email")
+#     print('google try', session["google_id"], session["name"], session['email'])
+#
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     # cursor.execute('SELECT google_id FROM accounts ')
+#     cursor.execute('SELECT * FROM accounts WHERE google_id = %s', (session['google_id'],))
+#     account = cursor.fetchone()
+#
+#     if account is None:
+#         # no account in database
+#         role = 'customer'
+#         username = session['name']
+#         pwd_type = 'random'
+#         password = generate_random_password()
+#         hashpwd = bcrypt.generate_password_hash(password)
+#         email = session['email']
+#         google_id = session['google_id']
+#         last_pwd_change = date.today()
+#         totp_key=generate_totp_token
+#         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#         cursor.execute(
+#             'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email,phone_number, google_id, is_verified, verification_token, totp_key) '
+#             'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+#             (role, username, pwd_type, hashpwd, last_pwd_change, email, '+6586751352', google_id, True, None,
+#              totp_key)
+#         )
+#
+#         # cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#         # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',
+#         #                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
+#         mysql.connection.commit()
+#         print('google create acc,successfully')
+#
+#         session['loggedin'] = True
+#         session['id'] = cursor.lastrowid
+#         session['username'] = session['name']
+#         session['role'] = 'customer'
+#         session['session_time'] = int(time.time())
+#     else:
+#         # if database have account
+#
+#         session['loggedin'] = True
+#         session['id'] = account['id']
+#         session['username'] = account['username']
+#         session['role'] = 'customer'
+#         session['session_time'] = int(time.time())
+#
+#     return redirect(url_for('home'))
 @app.route("/callback")
 def callback():
+    # Check if 'state' is present in request arguments
+    if 'state' not in request.args:
+        flash("Invalid state parameter")
+        return redirect(url_for('login'))
+
+    # Fetch the token and handle exceptions
     try:
         flow.fetch_token(authorization_response=request.url)
-    except:
-        print("Access denied error")
+    except Exception as e:
+        print(f"Access denied error: {e}")
         flash("Failed to login with Google")
         return redirect(url_for('login'))
 
-    if not session["state"] == request.args["state"]:
+    # Verify the state parameter
+    if session.get("state") != request.args.get("state"):
         abort(500)  # State does not match!
 
+    # Retrieve credentials and verify token
     credentials = flow.credentials
     request_session = requests.session()
     cached_session = cachecontrol.CacheControl(request_session)
     token_request = google.auth.transport.requests.Request(session=cached_session)
 
-    id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,
-        request=token_request,
-        audience=google_client_id
-    )
+    try:
+        id_info = id_token.verify_oauth2_token(
+            id_token=credentials._id_token,
+            request=token_request,
+            audience=google_client_id
+        )
+    except ValueError as e:
+        print(f"Token verification failed: {e}")
+        flash("Failed to verify Google token")
+        return redirect(url_for('login'))
 
+    # Update session with user information
     session["google_id"] = id_info.get("sub")
     session["name"] = id_info.get("name")
     session['email'] = id_info.get("email")
-    print('google try', session["google_id"], session["name"], session['email'])
+    print('Google login success:', session["google_id"], session["name"], session['email'])
 
+    # Check if the account exists in the database
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    # cursor.execute('SELECT google_id FROM accounts ')
     cursor.execute('SELECT * FROM accounts WHERE google_id = %s', (session['google_id'],))
     account = cursor.fetchone()
 
     if account is None:
-        # no account in database
+        # Create a new account if none exists
         role = 'customer'
         username = session['name']
         pwd_type = 'random'
@@ -267,19 +354,19 @@ def callback():
         google_id = session['google_id']
         last_pwd_change = date.today()
         totp_key=generate_totp_token
-        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute(
-            'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email,phone_number, google_id, is_verified, verification_token, totp_key) '
-            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-            (role, username, pwd_type, hashpwd, last_pwd_change, email, '+6586751352', google_id, True, None,
-             totp_key)
-        )
 
-        # cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        # cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s,%s, %s, %s,%s, %s)',
-        #                (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id,))
+        cursor.execute(
+                        'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email,phone_number, google_id, is_verified, verification_token, totp_key) '
+                        'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                        (role, username, pwd_type, hashpwd, last_pwd_change, email, '+6586751352', google_id, True, None,
+                         totp_key)
+                    )
+        # cursor.execute(
+        #     'INSERT INTO accounts (role, username, pwd_type, password, last_pwd_change, email, google_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+        #     (role, username, pwd_type, hashpwd, last_pwd_change, email, google_id)
+        # )
         mysql.connection.commit()
-        print('google create acc,successfully')
+        print('Google account created successfully')
 
         session['loggedin'] = True
         session['id'] = cursor.lastrowid
@@ -287,8 +374,7 @@ def callback():
         session['role'] = 'customer'
         session['session_time'] = int(time.time())
     else:
-        # if database have account
-
+        # Use existing account
         session['loggedin'] = True
         session['id'] = account['id']
         session['username'] = account['username']
@@ -415,15 +501,15 @@ def login():
                     if account['role']=='admin' or account['role']=='super_admin':
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        # return redirect(url_for('admin_home'))
-                        return redirect(url_for('verify_phone_otp'))
+                        return redirect(url_for('admin_home'))
+                        # return redirect(url_for('verify_phone_otp'))
 
                     else:
                         flash('You successfully log in ')
                         cursor.execute('DELETE FROM failed_login_attempts WHERE ip_addr = %s and username=%s', (user_ip,username,))
                         mysql.connection.commit()
-                        # return redirect(url_for('home'))
-                        return redirect(url_for('verify_phone_otp'))
+                        return redirect(url_for('home'))
+                        # return redirect(url_for('verify_phone_otp'))
 
             else:
                 msg = 'Incorrect username/password!'
@@ -773,99 +859,99 @@ def admin_register():
         return render_template('admin_register.html', msg=msg, form=register_form)
     return redirect(url_for('login'))
 
-@app.route('/verify_phone_otp', methods=['GET','POST'])
-@login_required
-def verify_phone_otp():
-    msg = ''
-    if 'loggedin' not in session:
-          return redirect(url_for('login'))
-    if 'verify' == False:
-         print("CAPTCHA verification is required")
-         return redirect(url_for('login'))
-    otp_form = OTPVerifyForm(request.form)
-    if request.method == 'POST':
-        if request.form['resend_otp']:
-            resend_otp()
-        if request.form['confirm_phone_otp']:
-            confirm_phone_otp()
-    session['otp_verified'] = False
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-
-    if account:
-          phone_number = account['phone_number']
-          totp_key = account['totp_key']
-          if totp_key:
-              otp = verification_code(phone_number, totp_key)
-              if otp:
-                  session['phone_number'] = phone_number
-                  session['otp'] = otp
-                  session['otp_timestamp'] = time.time()
-              else:
-                print('Error in sending OTP')
-    else:
-          print('Error in finding phone_number')
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
-
-@app.route('/confirm_phone_otp', methods=['GET','POST'])
-@login_required
-def confirm_phone_otp():
-    otp_form = OTPVerifyForm(request.form)
-    entered_otp = request.form['otp']
-    print(session['otp'])
-    otp_time = session['otp_timestamp']
-    current_time = time.time()
-
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-    if account:
-        totp_key = account['totp_key']
-        if totp_key:
-            otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
-            if entered_otp == session['otp']:
-                if not otp_expired:
-                    session['otp_verified'] = True
-                    if session['role'] == 'admin' or session['role'] == 'super_admin':
-                        msg = 'Success!'
-                        return redirect(url_for('admin_home', msg=msg))
-                    else:
-                        msg = 'You have successfully logged in'
-                        return redirect(url_for('home', msg=msg))
-                else:
-                    msg = 'OTP has expired.\n Please request a new OTP and try again'
-            else:
-                msg = 'Incorrect. Please try again'
-        else:
-            msg = 'Error in finding TOTP Secret Key'
-    else:
-        msg = 'Error in finding phone number'
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
-@app.route('/resend_otp', methods=['GET','POST'])
-@login_required
-def resend_otp():
-    otp_form = OTPVerifyForm(request.form)
-    username = session['username']
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-    account = cursor.fetchone()
-    if account:
-        phone_number = account['phone_number']
-        totp_key = account['totp_key']
-        otp = verification_code(phone_number, totp_key)
-        if otp:
-            session['phone_number'] = phone_number
-            session['otp'] = otp
-            session['otp_timestamp'] = time.time()
-            msg = 'OTP has been resent. Please try again'
-        else:
-            msg = 'Error in sending OTP'
-    else:
-        msg= 'Error in finding phone_number'
-    return render_template('verifyOTP.html', msg=msg, form=otp_form)
+# @app.route('/verify_phone_otp', methods=['GET','POST'])
+# @login_required
+# def verify_phone_otp():
+#     msg = ''
+#     if 'loggedin' not in session:
+#           return redirect(url_for('login'))
+#     if 'verify' == False:
+#          print("CAPTCHA verification is required")
+#          return redirect(url_for('login'))
+#     otp_form = OTPVerifyForm(request.form)
+#     if request.method == 'POST':
+#         if request.form['resend_otp']:
+#             resend_otp()
+#         if request.form['confirm_phone_otp']:
+#             confirm_phone_otp()
+#     session['otp_verified'] = False
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#
+#     if account:
+#           phone_number = account['phone_number']
+#           totp_key = account['totp_key']
+#           if totp_key:
+#               otp = verification_code(phone_number, totp_key)
+#               if otp:
+#                   session['phone_number'] = phone_number
+#                   session['otp'] = otp
+#                   session['otp_timestamp'] = time.time()
+#               else:
+#                 print('Error in sending OTP')
+#     else:
+#           print('Error in finding phone_number')
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+#
+# @app.route('/confirm_phone_otp', methods=['GET','POST'])
+# @login_required
+# def confirm_phone_otp():
+#     otp_form = OTPVerifyForm(request.form)
+#     entered_otp = request.form['otp']
+#     print(session['otp'])
+#     otp_time = session['otp_timestamp']
+#     current_time = time.time()
+#
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#     if account:
+#         totp_key = account['totp_key']
+#         if totp_key:
+#             otp_expired = current_time-otp_time > pyotp.TOTP(totp_key).interval
+#             if entered_otp == session['otp']:
+#                 if not otp_expired:
+#                     session['otp_verified'] = True
+#                     if session['role'] == 'admin' or session['role'] == 'super_admin':
+#                         msg = 'Success!'
+#                         return redirect(url_for('admin_home', msg=msg))
+#                     else:
+#                         msg = 'You have successfully logged in'
+#                         return redirect(url_for('home', msg=msg))
+#                 else:
+#                     msg = 'OTP has expired.\n Please request a new OTP and try again'
+#             else:
+#                 msg = 'Incorrect. Please try again'
+#         else:
+#             msg = 'Error in finding TOTP Secret Key'
+#     else:
+#         msg = 'Error in finding phone number'
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+# @app.route('/resend_otp', methods=['GET','POST'])
+# @login_required
+# def resend_otp():
+#     otp_form = OTPVerifyForm(request.form)
+#     username = session['username']
+#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+#     account = cursor.fetchone()
+#     if account:
+#         phone_number = account['phone_number']
+#         totp_key = account['totp_key']
+#         otp = verification_code(phone_number, totp_key)
+#         if otp:
+#             session['phone_number'] = phone_number
+#             session['otp'] = otp
+#             session['otp_timestamp'] = time.time()
+#             msg = 'OTP has been resent. Please try again'
+#         else:
+#             msg = 'Error in sending OTP'
+#     else:
+#         msg= 'Error in finding phone_number'
+#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/webapp/home')
 @login_required
@@ -1532,7 +1618,6 @@ def register_event():
         return render_template('event_register.html')
     return redirect(url_for('login'))
 
-
 @app.route('/delete/<int:order_id>', methods=['POST'])
 @admin_required
 @login_required
@@ -1545,6 +1630,8 @@ def delete(order_id):
         return redirect(url_for('retrieve_orders'))
     except Exception as e:
         return f"Error deleting order: {str(e)}"
+
+#verify_email_addr
 
 def send_otp_email(user, otp):
     try:
