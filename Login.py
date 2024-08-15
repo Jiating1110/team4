@@ -252,8 +252,13 @@ def callback():
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     # cursor.execute('SELECT google_id FROM accounts ')
-    cursor.execute('SELECT * FROM accounts WHERE google_id = %s', (session['google_id'],))
+    cursor.execute('SELECT * FROM accounts WHERE email = %s', (session['email'],))
     account = cursor.fetchone()
+
+    # cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    # # cursor.execute('SELECT google_id FROM accounts ')
+    # cursor.execute('SELECT * FROM accounts WHERE google_id = %s', (session['google_id'],))
+    # account = cursor.fetchone()
 
     if account is None:
         # no account in database
@@ -1231,21 +1236,52 @@ def reset_password(token):
         confirm_password = pwd_form.confirmpwd.data
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE pwd_type = %s', (user['pwd_type'],))
+        cursor.execute('SELECT * FROM accounts WHERE email = %s', (email,))
         account = cursor.fetchone()
         username = account['username']
         if newpwd == confirm_password:
             hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
 
             user_file = f"{username}_pwd"
+            # check pwd history
             try:
+                file = open(user_file, 'r+')
+                pwd_history = file.readlines()
+                pwd_history = [pwd.strip() for pwd in pwd_history]
+
+                for old_pwd in pwd_history:
+                    if bcrypt.check_password_hash(old_pwd, newpwd):
+                        print('hhhhh')
+                        flash('New password cannot be one of the previosly used passwords')
+                        return render_template('change_pwd.html', form=pwd_form)
+                if len(pwd_history) >= 3:
+                    pwd_history = pwd_history[1:]
+                pwd_history.append(hashpwd)
+                print('change pwd line', pwd_history)
+
+                file.seek(0)
+                file.truncate()  # Clear existing content
+                file.writelines(pwd + '\n' for pwd in pwd_history)
+            except FileNotFoundError:
                 file = open(user_file, 'w')
                 file.write("{}\n".format(hashpwd))
-                print(f"Hashed password successfully written to {user_file}")
-            except Exception as e:
-                print(f"Error writing hashed password to file: {e}")
 
+            last_pwd_change = date.today()
             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE email = %s',
+                           (hashpwd, last_pwd_change, email))
+            mysql.connection.commit()
+            # msg = 'You have successfully update!'
+            #
+            # user_file = f"{username}_pwd"
+            # try:
+            #     file = open(user_file, 'w')
+            #     file.write("{}\n".format(hashpwd))
+            #     print(f"Hashed password successfully written to {user_file}")
+            # except Exception as e:
+            #     print(f"Error writing hashed password to file: {e}")
+
+
             cursor.execute('SELECT * FROM accounts WHERE pwd_type = %s', (user['pwd_type'],))
             account = cursor.fetchone()
             if account['pwd_type'] == 'random':
@@ -1284,16 +1320,20 @@ def reset_request():
     return render_template('verify_email.html',form=verify_form,msg=msg)
 
 
-# @app.route('/webapp/verify_type', methods=['GET', 'POST'])
-# @login_required
-# @limiter.limit('2 per day')
-# def verify_type():
-#     if 'loggedin' in session:
-#         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#         cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
-#         account = cursor.fetchone()
-#         return render_template('verify_type.html')
-#     return redirect(url_for('login'))
+@app.route('/webapp/verify_type', methods=['GET', 'POST'])
+@login_required
+@limiter.limit('2 per day')
+def verify_type():
+    if 'loggedin' in session:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+        account = cursor.fetchone()
+        if account['pwd_type']=='random':
+            return redirect(url_for('reset_request'))
+        else:
+            return redirect(url_for('verify_password'))
+        # return render_template('verify_type.html')
+    return redirect(url_for('login'))
 
 
 @app.route('/webapp/verify/password', methods=['GET', 'POST'])
@@ -1341,6 +1381,7 @@ def change_password():
 
             username = account['username']
             role = account['role']
+            email=account['email']
 
             if newpwd == confirm_password:
                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
@@ -1375,21 +1416,21 @@ def change_password():
                 mysql.connection.commit()
                 msg = 'You have successfully update!'
 
-                encrypted_email = account['email'].encode()
-                key_file_name = f"{username}_symmetric.key"
-                if not os.path.exists(key_file_name):
-                    return "Symmetric key file not found."
-
-                # Open and read the symmetric key file
-                file = open(key_file_name, 'rb')
-                key = file.read()
-                file.close()
-                # Load he Symmetric key
-                f = Fernet(key)
-
-                # Decrypt the Encrypted Email address
-                decrypted_email = f.decrypt(encrypted_email)
-                email = decrypted_email.decode()
+                # encrypted_email = account['email'].encode()
+                # key_file_name = f"{username}_symmetric.key"
+                # if not os.path.exists(key_file_name):
+                #     return "Symmetric key file not found."
+                #
+                # # Open and read the symmetric key file
+                # file = open(key_file_name, 'rb')
+                # key = file.read()
+                # file.close()
+                # # Load he Symmetric key
+                # f = Fernet(key)
+                #
+                # # Decrypt the Encrypted Email address
+                # decrypted_email = f.decrypt(encrypted_email)
+                # email = decrypted_email.decode()
 
                 send_confirm_mail(email, username)
                 return render_template('change_pwd_successfully.html', username=username, role=role)
