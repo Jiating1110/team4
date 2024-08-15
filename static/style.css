@@ -26,13 +26,13 @@ body {
   	padding: 20px 0 20px 0;
 
 }
-.login, .register, .verify_otp {
+.login, .register, .verify_otp, .captcha {
   	width: 400px;
   	background-color: #ffffff;
   	box-shadow: 0 0 9px 0 rgba(0, 0, 0, 0.3);
   	margin: 100px auto;
 }
-.login h1, .register h1, .verify_otp h1 {
+.login h1, .register h1, .verify_otp h1, .captcha h1{
   	text-align: center;
   	color: #5b6574;
   	font-size: 24px;
@@ -57,7 +57,7 @@ body {
   	border-bottom: 3px solid #3274d6;
   	color: #3274d6;
 }
-.login form, .register form, .verify_otp form {
+.login form, .register form, .verify_otp form, .captcha form {
   	display: flex;
   	flex-wrap: wrap;
   	justify-content: center;
@@ -114,7 +114,7 @@ body {
   	margin-bottom: 20px;
   	padding: 0 15px;
 }
-.login form input[type="submit"], .register form input[type="submit"], #confirm_otp {
+.login form input[type="submit"], .register form input[type="submit"], #confirm_otp, .captcha form input[type="submit"]{
   	width: 100%;
   	padding: 15px;
   	margin-top: 20px;
@@ -318,10 +318,4 @@ body.loggedin {
 strong {
     font-weight: bold;
 }
-
-.form-group {
-    margin-bottom: 1.5rem; /* Add space between form fields */
-}
-
-
 

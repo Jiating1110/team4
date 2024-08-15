@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify CAPTCHA</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<div class="captcha">
+    <form id="captcha-form" action="{{ url_for('verifyCaptcha') }}" method="post">
+        <div class="captcha-container">
+            <h1>Complete CAPTCHA Verification</h1>
+            <!-- Include CAPTCHA verification widget here -->
+            {% include 'captcha.html' %}
+            <p id="mssg" class="mssg">{{ mssg }}</p>
+            <input type="hidden" name="verify" value="true">
+            <input type="submit" value="Confirm">
+        </div>
+
+    </form>
+
+</div>
+
+<script>
+				function verify(){
+					if (!updatePuzzlePiecePos()) {
+						document.querySelector('#mssg').textContent = "Please complete CAPTCHA";
+						mssg.className = "error";
+						return false;
+					} else{
+						document.querySelector('.mssg').textContent = '';
+						return true;
+					}
+				}
+      document.getElementById('captcha-form').addEventListener('submit', function(event) {
+        if (!verify()) {
+            event.preventDefault(); // Prevent form submission if CAPTCHA is not completed
+            return;
+        }
+    });
+</script>
+</body>
+</html>
+

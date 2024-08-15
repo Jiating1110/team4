@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,229 +37,221 @@
     </style>
 </head>
 <body>
-    <div class="error_msg">
-        {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-warning alert-dismissable" role="alert">
-                        <span>{{ message }}</span>
-                        <button type="button" class="close" data-bs-dismiss="alert" aria-label="close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-    <div class="register_box">
-        <div class="register">
-            <h1>Register</h1>
-            <div class="links">
-                <a href="{{ url_for('login') }}">Login</a>
-                <a href="{{ url_for('register') }}" class="active">Register</a>
-            </div>
-            <form id="registration-form" action="{{ url_for('register') }}" method="post" autocomplete="off">
-                <div class="form-group">
-                    <div class="input-icon">
-                        <i class="fas fa-user"></i>
-                        {{ form.username(placeholder="Username", class="input-box") }}
-                    </div>
+<div class="error_msg">
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-warning alert-dismissable" role="alert">
+                    <span>{{ message }}</span>
+                    <button type="button" class="close" data-bs-dismiss="alert" aria-label="close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
                 </div>
-                <div class="form-group">
-                    <div class="input-icon">
-                        <i class="fas fa-lock"></i>
-                        {{ form.password(placeholder="Password", class="input-box") }}
-                    </div>
-                </div>
-                <div class="form-group">
-                    <div class="input-icon">
-                        <i class="fas fa-envelope"></i>
-                        {{ form.email(placeholder="Email", class="input-box") }}
-                    </div>
-                    <button type="button" id="send-otp" class="send-otp-btn" onclick="sendOTP()">Send OTP</button>
-                </div>
-                <div class="otp-container" id="otp-container">
-                    <div class="form-group">
-                        <div class="input-icon">
-                            <i class="fas fa-key"></i>
-                            <input type="text" id="otp" name="otp" placeholder="Enter OTP" class="input-box">
-                        </div>
-                    </div>
-                    <div class="otp-status" id="otp-status"></div>
-                    <div class="otp-timer" id="otp-timer">00:00</div>
-                </div>
-                <div id="password-errors">
-                    {% if form.password.errors %}
-                        <ul class="errors">
-                            {% for error in form.password.errors %}
-                                <li>{{ error }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
-                <div id="email-errors">
-                    {% if form.email.errors %}
-                        <ul class="errors">
-                            {% for error in form.email.errors %}
-                                <li>{{ error }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
-                <div class="msg">{{ msg }}</div>
-                <div class="container">
-					{% include 'captcha.html' %}
-            	</div>
-                <div class="otp-status">{{ mssg }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+</div>
 
-
-
-                <!-- Hidden field to store OTP verification status -->
-                <input type="hidden" name="otp_verified" value="false">
-                <input type="submit" name="register" value="Register">
-            </form>
+<div class="register_box">
+    <div class="register">
+        <h1>Register</h1>
+        <div class="links">
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}" class="active">Register</a>
         </div>
+        <form id="registration-form" action="{{ url_for('register') }}" method="post" autocomplete="off">
+            <div class="form-group">
+                <div class="input-icon">
+                    <i class="fas fa-user"></i>
+                    {{ form.username(placeholder="Username", class="input-box") }}
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="input-icon">
+                    <i class="fas fa-lock"></i>
+                    {{ form.password(placeholder="Password", class="input-box") }}
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="input-icon">
+                    <i class="fas fa-envelope"></i>
+                    {{ form.email(placeholder="Email", class="input-box") }}
+                </div>
+                <button type="button" id="send-otp" class="send-otp-btn" onclick="sendOTP()">Send OTP</button>
+            </div>
+            <div class="otp-container" id="otp-container">
+                <div class="form-group">
+                    <div class="input-icon">
+                        <i class="fas fa-key"></i>
+                        <input type="text" id="otp" name="otp" placeholder="Enter OTP" class="input-box">
+                    </div>
+                </div>
+                <div class="otp-status" id="otp-status"></div>
+                <div class="otp-timer" id="otp-timer">00:00</div>
+            </div>
+
+            <div id="password-errors">
+                {% if form.password.errors %}
+                    <ul class="errors">
+                        {% for error in form.password.errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+            <div id="email-errors">
+                {% if form.email.errors %}
+                    <ul class="errors">
+                        {% for error in form.email.errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+
+            <div class="msg">{{ msg }}</div>
+            <div class="otp-status">{{ mssg }}</div>
+
+
+            <!-- Hidden field to store OTP verification status -->
+            <input type="hidden" name="otp_verified" value="false">
+            <input type="submit" name="register" value="Register">
+        </form>
     </div>
-    <script>
-				function verify(){
-					if (!updatePuzzlePiecePos()) {
-						document.querySelector('#mssg').textContent = "Please complete CAPTCHA";
-						mssg.className = "error";
-						return false;
-					} else{
-						document.querySelector('.mssg').textContent = '';
-						return true;
-					}
-				}
-    </script>
+</div>
 
-    <script>
-        let otpExpiryTime = 0;
-        let otpTimerInterval;
-        const otpContainer = document.getElementById('otp-container');
-        const otpTimerElem = document.getElementById('otp-timer');
-        const otpStatusElem = document.getElementById('otp-status');
-        const registrationForm = document.getElementById('registration-form');
+<script>
+    let otpExpiryTime = 0;
+    let otpTimerInterval;
+    const otpContainer = document.getElementById('otp-container');
+    const otpTimerElem = document.getElementById('otp-timer');
+    const otpStatusElem = document.getElementById('otp-status');
+    const registrationForm = document.getElementById('registration-form');
 
-        function sendOTP() {
-            const email = document.querySelector('input[name="email"]').value;
-            if (email) {
-                fetch('/send_otp', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ email: email }),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        otpExpiryTime = Date.now() + 30000; // 30 seconds
-                        otpContainer.style.display = 'block';
-                        otpTimerElem.style.display = 'block';
-                        otpStatusElem.style.display = 'none'; // Hide status initially
-                        startOTPTimer();
-                    } else {
-                        otpStatusElem.textContent = 'Failed to send OTP. Please try again.';
-                        otpStatusElem.className = 'otp-status error';
-                        otpStatusElem.style.display = 'block';
-                    }
-                })
-                .catch(error => {
-                    otpStatusElem.textContent = 'Error sending OTP. Please try again.';
+    function sendOTP() {
+        const email = document.querySelector('input[name="email"]').value;
+        console.log('Sending OTP for email:', email);
+        if (email) {
+            fetch('/send_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email: email }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    otpStatusElem.textContent = data.message;
+                    otpStatusElem.className = 'otp-status success';
+                    otpStatusElem.style.display = 'block';
+
+                    // Show OTP input and start timer
+                    otpExpiryTime = Date.now() + 30000; // 30 seconds
+                    otpContainer.style.display = 'block';
+                    otpTimerElem.style.display = 'block';
+                    startOTPTimer();
+                } else {
+                    otpStatusElem.textContent = data.message;
                     otpStatusElem.className = 'otp-status error';
                     otpStatusElem.style.display = 'block';
-                });
-            } else {
-                otpStatusElem.textContent = 'Please enter your email.';
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                otpStatusElem.textContent = 'Error sending OTP. Please try again.';
                 otpStatusElem.className = 'otp-status error';
                 otpStatusElem.style.display = 'block';
-            }
+            });
+        } else {
+            otpStatusElem.textContent = 'Please enter your email.';
+            otpStatusElem.className = 'otp-status error';
+            otpStatusElem.style.display = 'block';
         }
+    }
 
-        function startOTPTimer() {
-            function updateTimer() {
-                const now = Date.now();
-                const timeLeft = otpExpiryTime - now;
-                if (timeLeft > 0) {
-                    const seconds = Math.ceil(timeLeft / 1000);
-                    otpTimerElem.textContent = `00:${seconds.toString().padStart(2, '0')}`;
-                } else {
-                    otpTimerElem.textContent = '00:00';
-                    otpStatusElem.textContent = 'OTP expired. Please request a new one.';
-                    otpStatusElem.className = 'otp-status error';
-                    otpStatusElem.style.display = 'block';
-                    clearInterval(otpTimerInterval);
-                }
-            }
-            updateTimer();
-            otpTimerInterval = setInterval(updateTimer, 1000);
-        }
 
-        document.getElementById('otp').addEventListener('input', function() {
-            const otpValue = this.value;
+    function startOTPTimer() {
+        function updateTimer() {
             const now = Date.now();
-            if (now <= otpExpiryTime) {
-                fetch('/verify_otp', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ otp: otpValue }),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        otpStatusElem.textContent = 'Email verification confirmed.';
-                        otpStatusElem.className = 'otp-status success';
-                        otpStatusElem.style.display = 'block';
-                        otpTimerElem.textContent = '00:00'; // Stop the timer
-                        clearInterval(otpTimerInterval);
-                        // Update the hidden field value
-                        document.querySelector('input[name="otp_verified"]').value = 'true';
-                    } else {
-                        otpStatusElem.textContent = 'Invalid OTP. Please try again.';
-                        otpStatusElem.className = 'otp-status error';
-                        otpStatusElem.style.display = 'block';
-                        // Update the hidden field value
-                        document.querySelector('input[name="otp_verified"]').value = 'false';
-                    }
-                })
-                .catch(error => {
-                    otpStatusElem.textContent = 'Error verifying OTP. Please try again.';
+            const timeLeft = otpExpiryTime - now;
+            if (timeLeft > 0) {
+                const seconds = Math.ceil(timeLeft / 1000);
+                otpTimerElem.textContent = `00:${seconds.toString().padStart(2, '0')}`;
+            } else {
+                otpTimerElem.textContent = '00:00';
+                otpStatusElem.textContent = 'OTP expired. Please request a new one.';
+                otpStatusElem.className = 'otp-status error';
+                otpStatusElem.style.display = 'block';
+                clearInterval(otpTimerInterval);
+            }
+        }
+        updateTimer();
+        otpTimerInterval = setInterval(updateTimer, 1000);
+    }
+
+    document.getElementById('otp').addEventListener('input', function() {
+        const otpValue = this.value;
+        const now = Date.now();
+        if (now <= otpExpiryTime) {
+            fetch('/verify_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ otp: otpValue }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    otpStatusElem.textContent = 'Email verification confirmed.';
+                    otpStatusElem.className = 'otp-status success';
+                    otpStatusElem.style.display = 'block';
+                    otpTimerElem.textContent = '00:00'; // Stop the timer
+                    clearInterval(otpTimerInterval);
+                    // Update the hidden field value
+                    document.querySelector('input[name="otp_verified"]').value = 'true';
+                } else {
+                    otpStatusElem.textContent = 'Invalid OTP. Please try again.';
                     otpStatusElem.className = 'otp-status error';
                     otpStatusElem.style.display = 'block';
                     // Update the hidden field value
                     document.querySelector('input[name="otp_verified"]').value = 'false';
-                });
-            } else {
-                otpStatusElem.textContent = 'OTP expired. Please request a new one.';
+                }
+            })
+            .catch(error => {
+                otpStatusElem.textContent = 'Error verifying OTP. Please try again.';
                 otpStatusElem.className = 'otp-status error';
                 otpStatusElem.style.display = 'block';
                 // Update the hidden field value
                 document.querySelector('input[name="otp_verified"]').value = 'false';
-            }
-        });
+            });
+        } else {
+            otpStatusElem.textContent = 'OTP expired. Please request a new one.';
+            otpStatusElem.className = 'otp-status error';
+            otpStatusElem.style.display = 'block';
+            // Update the hidden field value
+            document.querySelector('input[name="otp_verified"]').value = 'false';
+        }
+    });
 
-        registrationForm.addEventListener('submit', function(event) {
-            const otpVerified = document.querySelector('input[name="otp_verified"]').value === 'true';
-            const now = Date.now();
-            if (now > otpExpiryTime) {
-                event.preventDefault();
-                otpStatusElem.textContent = 'OTP expired. Please request a new one.';
-                otpStatusElem.className = 'otp-status error';
-                otpStatusElem.style.display = 'block';
-            } else if (!otpVerified) {
-                event.preventDefault();
-                otpStatusElem.textContent = 'Please verify your OTP before registering.';
-                otpStatusElem.className = 'otp-status error';
-                otpStatusElem.style.display = 'block';
-            }
-            if (!verify()) {
-                event.preventDefault();
-                return;
-            }
-        });
-    </script>
+    registrationForm.addEventListener('submit', function(event) {
+        const otpVerified = document.querySelector('input[name="otp_verified"]').value === 'true';
+        const now = Date.now();
+        if (now > otpExpiryTime) {
+            event.preventDefault();
+            otpStatusElem.textContent = 'OTP expired. Please request a new one.';
+            otpStatusElem.className = 'otp-status error';
+            otpStatusElem.style.display = 'block';
+        } else if (!otpVerified) {
+            event.preventDefault();
+            otpStatusElem.textContent = 'Please verify your OTP before registering.';
+            otpStatusElem.className = 'otp-status error';
+            otpStatusElem.style.display = 'block';
+        }
+
+    });
+</script>
 </body>
 </html>
