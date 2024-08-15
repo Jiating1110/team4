@@ -11,8 +11,6 @@ def pwd_dic_check(form,field):
 def pwd_check(form,field):
     pwd=field.data
     pattern=("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!#%*?&]{10,20}$")
-    # if len(pwd)<10:
-    #     raise ValidationError('Password must have at least 10 characters')
     if re.search(r"(.)\1{2}", pwd):
         raise ValidationError('Not more than 2 identical characters in a row')
     if not re.match(pattern,pwd):
