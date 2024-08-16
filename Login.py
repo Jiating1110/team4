@@ -783,41 +783,41 @@ def admin_register():
 
 
 
-# @app.route('/verify_phone_otp', methods=['GET','POST'])
-# @login_required
-# def verify_phone_otp():
-#     msg = ''
-#     if 'loggedin' not in session:
-#           return redirect(url_for('login'))
-#     if 'verify' == False:
-#          print("CAPTCHA verification is required")
-#          return redirect(url_for('login'))
-#     otp_form = OTPVerifyForm(request.form)
-#     if request.method == 'POST':
-#         if request.form['resend_otp']:
-#             resend_otp()
-#         if request.form['confirm_phone_otp']:
-#             confirm_phone_otp()
-#     session['otp_verified'] = False
-#     username = session['username']
-#     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#     cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
-#     account = cursor.fetchone()
-#
-#     if account:
-#           phone_number = account['phone_number']
-#           totp_key = account['totp_key']
-#           if totp_key:
-#               otp = verification_code(phone_number, totp_key)
-#               if otp:
-#                   session['phone_number'] = phone_number
-#                   session['otp'] = otp
-#                   session['otp_timestamp'] = time.time()
-#               else:
-#                 print('Error in sending OTP')
-#     else:
-#           print('Error in finding phone_number')
-#     return render_template('verifyOTP.html', msg=msg, form=otp_form)
+@app.route('/verify_phone_otp', methods=['GET','POST'])
+@login_required
+def verify_phone_otp():
+    msg = ''
+    if 'loggedin' not in session:
+          return redirect(url_for('login'))
+    if 'verify' == False:
+         print("CAPTCHA verification is required")
+         return redirect(url_for('login'))
+    otp_form = OTPVerifyForm(request.form)
+    if request.method == 'POST':
+        if request.form['resend_otp']:
+            resend_otp()
+        if request.form['confirm_phone_otp']:
+            confirm_phone_otp()
+    session['otp_verified'] = False
+    username = session['username']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT phone_number, totp_key FROM accounts WHERE username = %s', (username,))
+    account = cursor.fetchone()
+
+    if account:
+          phone_number = account['phone_number']
+          totp_key = account['totp_key']
+          if totp_key:
+              otp = verification_code(phone_number, totp_key)
+              if otp:
+                  session['phone_number'] = phone_number
+                  session['otp'] = otp
+                  session['otp_timestamp'] = time.time()
+              else:
+                print('Error in sending OTP')
+    else:
+          print('Error in finding phone_number')
+    return render_template('verifyOTP.html', msg=msg, form=otp_form)
 
 @app.route('/confirm_phone_otp', methods=['GET','POST'])
 @login_required
@@ -910,21 +910,6 @@ def profile():
         account = cursor.fetchone()
         email = account['email']
 
-
-        # # encrypted_email = account['email'].encode()
-        # # username = account['username']
-        # # key_file_name = f"{username}_symmetric.key"
-        # #
-        # # if not os.path.exists(key_file_name):
-        # #     return "Symmetric key file not found."
-        # # with open(key_file_name, 'rb') as key_file:
-        # #     key = key_file.read()
-        # #
-        # # f = Fernet(key)
-        # # decrypted_email = f.decrypt(encrypted_email)
-        # # email = decrypted_email.decode()
-        #
-        # Mask the email address
         email_parts = email.split('@')
         masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
 
@@ -948,20 +933,7 @@ def admin_profile():
         account = cursor.fetchone()
         email=account['email']
 
-        # encrypted_email = account['email'].encode()
-        # username = account['username']
-        # key_file_name = f"{username}_symmetric.key"
-        #
-        # if not os.path.exists(key_file_name):
-        #     return "Symmetric key file not found."
-        # with open(key_file_name, 'rb') as key_file:
-        #     key = key_file.read()
-        #
-        # f = Fernet(key)
-        # decrypted_email = f.decrypt(encrypted_email)
-        # email = decrypted_email.decode()
-        #
-        # Mask the email address
+
         email_parts = email.split('@')
         masked_email = f"{email_parts[0][0]}***{email_parts[0][-1]}@{email_parts[1]}"
 
@@ -1205,66 +1177,66 @@ def verify_password():
     return redirect(url_for('login'))
 
 
-# @app.route('/webapp/profile/change_passowrd', methods=['GET', 'POST'])
-# @login_required
-# @session_timeout_required
-# def change_password():
-#     if 'loggedin' in session:
-#         print('hhh')
-#         msg = ' '
-#         pwd_form = ChangePassword(request.form)
-#         if request.method == 'POST' and pwd_form.validate():
-#             newpwd = pwd_form.newpwd.data
-#             confirm_password = pwd_form.confirmpwd.data
-#
-#             cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#             cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
-#             account = cursor.fetchone()
-#
-#             username = account['username']
-#             role = account['role']
-#             email=account['email']
-#
-#             if newpwd == confirm_password:
-#                 hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
-#
-#                 user_file = f"{username}_pwd"
-#                 # check pwd history
-#                 try:
-#                     file = open(user_file, 'r+')
-#                     pwd_history = file.readlines()
-#                     pwd_history = [pwd.strip() for pwd in pwd_history]
-#
-#                     for old_pwd in pwd_history:
-#                         if bcrypt.check_password_hash(old_pwd, newpwd):
-#                             flash('New password cannot be one of the previosly used passwords')
-#                             return redirect(url_for('change_password'))
-#                     if len(pwd_history) >= 3:
-#                         pwd_history = pwd_history[1:]
-#                     pwd_history.append(hashpwd)
-#                     print('change pwd line', pwd_history)
-#
-#                     file.seek(0)
-#                     file.truncate()  # Clear existing content
-#                     file.writelines(pwd + '\n' for pwd in pwd_history)
-#                 except FileNotFoundError:
-#                     file = open(user_file, 'w')
-#                     file.write("{}\n".format(hashpwd))
-#
-#                 last_pwd_change = date.today()
-#                 cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-#                 cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s',
-#                                (hashpwd, last_pwd_change, session['id']))
-#                 mysql.connection.commit()
-#                 msg = 'You have successfully update!'
-#
-#                 send_confirm_mail(email, username)
-#                 return render_template('change_pwd_successfully.html', username=username, role=role)
-#
-#             else:
-#                 msg = 'Password didnt match.Pls try again'
-#         return render_template('change_pwd.html', form=pwd_form, msg=msg)
-#     return redirect(url_for('login'))
+@app.route('/webapp/profile/change_passowrd', methods=['GET', 'POST'])
+@login_required
+@session_timeout_required
+def change_password():
+    if 'loggedin' in session:
+        print('hhh')
+        msg = ' '
+        pwd_form = ChangePassword(request.form)
+        if request.method == 'POST' and pwd_form.validate():
+            newpwd = pwd_form.newpwd.data
+            confirm_password = pwd_form.confirmpwd.data
+
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+            account = cursor.fetchone()
+
+            username = account['username']
+            role = account['role']
+            email=account['email']
+
+            if newpwd == confirm_password:
+                hashpwd = bcrypt.generate_password_hash(confirm_password).decode('utf-8')
+
+                user_file = f"{username}_pwd"
+                # check pwd history
+                try:
+                    file = open(user_file, 'r+')
+                    pwd_history = file.readlines()
+                    pwd_history = [pwd.strip() for pwd in pwd_history]
+
+                    for old_pwd in pwd_history:
+                        if bcrypt.check_password_hash(old_pwd, newpwd):
+                            flash('New password cannot be one of the previosly used passwords')
+                            return redirect(url_for('change_password'))
+                    if len(pwd_history) >= 3:
+                        pwd_history = pwd_history[1:]
+                    pwd_history.append(hashpwd)
+                    print('change pwd line', pwd_history)
+
+                    file.seek(0)
+                    file.truncate()  # Clear existing content
+                    file.writelines(pwd + '\n' for pwd in pwd_history)
+                except FileNotFoundError:
+                    file = open(user_file, 'w')
+                    file.write("{}\n".format(hashpwd))
+
+                last_pwd_change = date.today()
+                cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+                cursor.execute('UPDATE accounts SET password = %s,last_pwd_change= %s WHERE id = %s',
+                               (hashpwd, last_pwd_change, session['id']))
+                mysql.connection.commit()
+                msg = 'You have successfully update!'
+
+                send_confirm_mail(email, username)
+                return render_template('change_pwd_successfully.html', username=username, role=role)
+
+            else:
+                msg = 'Password didnt match.Pls try again'
+        return render_template('change_pwd.html', form=pwd_form, msg=msg)
+    return redirect(url_for('login'))
 
 def send_confirm_mail(email, username):
     msg = MIMEMultipart()
